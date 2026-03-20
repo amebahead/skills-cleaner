@@ -85,25 +85,6 @@ Then presents similar pairs one at a time for interactive removal with a final c
 - **Personal skills**: Deletes the skill directory directly
 - **Plugin skills**: Never deletes directly — provides guidance on deactivation or removal
 
-## Project Structure
-
-```
-skills-cleaner/
-├── .claude-plugin/
-│   ├── plugin.json
-│   └── marketplace.json
-├── skills/
-│   ├── list-skills/
-│   │   └── SKILL.md
-│   ├── search-skills/
-│   │   └── SKILL.md
-│   └── clean-skills/
-│       └── SKILL.md
-└── docs/
-    └── superpowers/specs/
-        └── 2026-03-19-skills-cleaner-design.md
-```
-
 ## License
 
 MIT
