@@ -45,9 +45,8 @@ Uses subagents to compare skill pairs in parallel across 4 dimensions: purpose, 
 Displays only pairs with 70%+ similarity, sorted in descending order.
 
 ```
-#1  executing-plans ↔ subagent-driven-development
-    Similarity: ██████████████████░░ 85%
-    Source: plugin ↔ plugin
+#1  executing-plans  VS  subagent-driven-development
+    ██████████████████░░ 85%  ·  plugin VS plugin
 ```
 
 | Grade | Similarity | Meaning |

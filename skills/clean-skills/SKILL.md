@@ -1,13 +1,11 @@
 ---
-name: skills-cleaner
-description: Use when you want to compare installed skills for similarity, identify overlapping functionality, and clean up redundant skills — covers personal skills and plugin skills
+name: clean-skills
+description: Compare installed skills for similarity, identify overlapping functionality, and clean up redundant skills — covers personal skills and plugin skills
 ---
 
-# Skills Cleaner
+# Clean Skills
 
-## Overview
-
-Compare the full SKILL.md content of all installed skills to identify similar/redundant skills, then interactively guide the user through cleanup.
+Compare all installed skills to identify similar/redundant ones, then interactively guide cleanup.
 
 ## When to Use
 
@@ -114,24 +112,22 @@ Sort by similarity descending. Follow this exact format:
 
 ```
 Skills Similarity Report
-Analyzed: 14 skills · 91 pairs · Threshold: 70%
+14 skills · 91 pairs · Threshold: 70%
 
 Found 3 similar pairs:
 
-#1  executing-plans ↔ subagent-driven-development
-    Similarity: ██████████████████░░ 85%
-    Source: plugin ↔ plugin
+#1  executing-plans  VS  subagent-driven-development
+    ██████████████████░░ 85%  ·  plugin VS plugin
 
-    Overlapping
+    Overlap
       · Both execute implementation plans via subagents
       · Both include a code review stage
 
-    Differences
+    Diff
       · executing-plans: runs in a separate session
       · subagent-driven-development: runs in the current session
 
-    Recommendation
-      Choose one based on whether session isolation is needed
+    → Choose one based on whether session isolation is needed
 
 ---
 
@@ -140,14 +136,14 @@ Found 3 similar pairs:
 ---
 
 Summary
-  🔴  90%+   Remove candidate     0 pairs
-  🟡  70-89% Review suggested     3 pairs
-  🟢  <70%   Unique              (number of skills not in any similar pair)
+  🔴  90%+   Remove candidate   0 pairs
+  🟡  70-89% Review suggested   3 pairs
+  🟢  <70%   Unique             (skills not in any similar pair)
 ```
 
 ### Similarity Bar
 
-Visualize the percentage as a 20-character progress bar: `██████████████████░░ 85%`
+20-character progress bar: `██████████████████░░ 85%`
 
 ### Similarity Grades
 
@@ -166,9 +162,8 @@ Found N similar pairs. Review them one by one? (y/n)
 Ask about **one pair at a time** in descending similarity order. Wait for the user's response before showing the next pair. Never show multiple pairs at once.
 
 ```
-#1  executing-plans ↔ subagent-driven-development (85%)
+#1  executing-plans  VS  subagent-driven-development  (85%)
 
-    What would you like to do?
     a) Remove executing-plans
     b) Remove subagent-driven-development
     c) Keep both (skip)
