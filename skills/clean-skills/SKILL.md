@@ -25,7 +25,9 @@ digraph skills_cleaner {
     "Batch by 10" [shape=box];
     "Stage 3: Report" [shape=box];
     "Any pairs >= 70%?" [shape=diamond];
-    "Stage 4: Interactive" [shape=box];
+    "Stage 4: Interactive Select" [shape=box];
+    "Final Confirmation" [shape=diamond];
+    "Stage 5: Execute Deletion" [shape=box];
     "Done" [shape=doublecircle];
 
     "Stage 1: Collect" -> "Show skill list to user";
@@ -36,9 +38,12 @@ digraph skills_cleaner {
     "All parallel" -> "Stage 3: Report";
     "Batch by 10" -> "Stage 3: Report";
     "Stage 3: Report" -> "Any pairs >= 70%?";
-    "Any pairs >= 70%?" -> "Stage 4: Interactive" [label="yes"];
+    "Any pairs >= 70%?" -> "Stage 4: Interactive Select" [label="yes"];
     "Any pairs >= 70%?" -> "Done" [label="no similar pairs"];
-    "Stage 4: Interactive" -> "Done";
+    "Stage 4: Interactive Select" -> "Final Confirmation";
+    "Final Confirmation" -> "Stage 5: Execute Deletion" [label="yes"];
+    "Final Confirmation" -> "Done" [label="no"];
+    "Stage 5: Execute Deletion" -> "Done";
 }
 ```
 
@@ -190,23 +195,49 @@ Proceed? (y/n)
 
 ### Removal Actions
 
-**Personal skills** (`~/.claude/skills/`): delete the skill directory.
+After the user confirms "Proceed? (y/n)" with yes, **immediately execute deletion** using the Bash tool.
 
-**Plugin skills**: NEVER delete directly. Instead, provide guidance:
-- How to disable a specific skill in the plugin settings
-- How to remove the plugin entirely (`claude plugins remove <name>`)
-- Cache files are regenerated on plugin updates — direct modification is not recommended
+**Personal skills** (`~/.claude/skills/<skill-name>/`):
+- Delete the skill directory: `rm -rf ~/.claude/skills/<skill-name>/`
+- Verify deletion: `ls ~/.claude/skills/<skill-name>/ 2>&1` (should show "No such file or directory")
 
-**NEVER suggest using `rm -rf` to delete plugin cache files.**
+**Plugin skills** (`~/.claude/plugins/cache/<plugin>/<plugin>/<version>/skills/<skill-name>/`):
+- Delete the skill directory from the plugin cache: `rm -rf <full-path-to-skill-directory>/`
+- Verify deletion: `ls <full-path-to-skill-directory>/ 2>&1` (should show "No such file or directory")
+- **Important**: After deleting a plugin skill, warn the user:
+  ```
+  ⚠️  Plugin skill "<skill-name>" was removed from the cache.
+      This skill may be restored when the plugin "<plugin-name>" is updated.
+      To permanently prevent this, remove the plugin: claude plugins remove <plugin-name>
+  ```
+
+For each skill, show the deletion result inline:
+
+```
+Removing executing-plans...
+  ✅ Deleted: ~/.claude/skills/executing-plans/
+
+Removing old-brainstorm...
+  ✅ Deleted: ~/.claude/plugins/cache/superpowers/.../old-brainstorm/
+  ⚠️  May be restored on plugin update. To prevent: claude plugins remove superpowers
+```
+
+If deletion fails (permission denied, path not found, etc.), show the error and continue with the next skill:
+
+```
+Removing broken-skill...
+  ❌ Failed: Permission denied — ~/.claude/skills/broken-skill/
+```
 
 ### Completion Summary
 
 ```
 Review complete.
 
-  Removed: 1 skill (executing-plans)
-  Kept:    13 skills
-  Skipped: 2 pairs
+  ✅ Removed: 2 skills (executing-plans, old-brainstorm)
+  ❌ Failed:  1 skill (broken-skill — Permission denied)
+  Kept:      11 skills
+  Skipped:   1 pair
 ```
 
 ## Common Mistakes
@@ -215,9 +246,12 @@ Review complete.
 |---------|-----------------|
 | Sequential comparison in a single agent | Always use parallel subagents |
 | Including pairs below 70% in the report | Only include 70% and above |
-| Suggesting direct deletion of plugin cache | Only guide on deactivation methods |
-| Presenting rm commands without interactive flow | Step-by-step questions then final confirmation |
+| Only providing guidance without actual deletion | Execute `rm -rf` on the skill directory after user confirmation |
+| Deleting without final confirmation | Always require final confirmation gate before any deletion |
+| Not verifying deletion succeeded | Always verify with `ls` after each `rm -rf` |
+| Not warning about plugin skill restoration | Always warn that plugin updates may restore deleted plugin skills |
 | Missing source (personal/plugin) labels | Always show Source for each pair |
 | Skipping final confirmation before deletion | Always require final confirmation gate |
 | Showing multiple pairs at once | Ask one pair at a time, wait for response |
 | Treating complementary skills as duplicates | Score low when roles differ |
+| Stopping on a single deletion failure | Show error and continue with remaining skills |
