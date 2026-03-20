@@ -4,7 +4,7 @@
   "description": "Marketplace for Skills Cleaner plugin",
   "owner": {
     "name": "amebahead",
-    "email": "amebahead@naver.com"
+    "email": "dowitcher@naver.com"
   },
   "plugins": [
     {
@@ -14,7 +14,7 @@
       "source": "./",
       "author": {
         "name": "amebahead",
-        "email": "amebahead@naver.com"
+        "email": "dowitcher@naver.com"
       },
       "keywords": ["skills", "cleanup", "similarity", "duplicates", "organization"],
       "homepage": "https://github.com/amebahead/skills-cleaner"
