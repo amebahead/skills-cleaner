@@ -1,48 +1,48 @@
 # Skills Cleaner
 
-설치된 Claude Code 스킬들의 유사성을 비교하고, 중복/겹치는 스킬을 식별하여 대화형으로 정리할 수 있게 안내하는 플러그인.
+A Claude Code plugin that compares installed skills for similarity, identifies overlapping or redundant skills, and interactively guides you through cleanup.
 
-## 설치
+## Installation
 
 ```bash
 claude plugin marketplace add amebahead/skills-cleaner
 claude plugin install skills-cleaner
 ```
 
-또는 Claude Code 내에서:
+Or within Claude Code:
 
 ```
 /plugin marketplace add amebahead/skills-cleaner
 /plugin install skills-cleaner
 ```
 
-## 사용법
+## Usage
 
-Claude Code에서 아래와 같이 요청하면 자동으로 스킬이 트리거됩니다:
+The skill triggers automatically when you ask Claude Code things like:
 
-- "스킬 정리해줘"
-- "중복 스킬 확인해줘"
-- "설치된 스킬들 비교해줘"
+- "Clean up my skills"
+- "Check for duplicate skills"
+- "Compare installed skills"
 
-## 동작 방식
+## How It Works
 
-4단계 파이프라인으로 동작합니다:
+A 4-stage pipeline:
 
 ```
-수집 → 병렬 비교 → 리포트 → 대화형 제거 안내
+Collect → Parallel Compare → Report → Interactive Removal
 ```
 
-### Stage 1: 스킬 수집
+### Stage 1: Collect Skills
 
-개인 스킬(`~/.claude/skills/`)과 플러그인 스킬(`~/.claude/plugins/cache/`)에서 SKILL.md 파일을 수집합니다.
+Scans personal skills (`~/.claude/skills/`) and plugin skills (`~/.claude/plugins/cache/`) for SKILL.md files.
 
-### Stage 2: 병렬 비교
+### Stage 2: Parallel Comparison
 
-서브에이전트를 활용해 스킬 쌍을 병렬로 비교합니다. 4가지 차원(목적, 트리거, 프로세스, 출력)에서 유사도를 분석합니다.
+Uses subagents to compare skill pairs in parallel across 4 dimensions: purpose, trigger, process, and output similarity.
 
-### Stage 3: 리포트
+### Stage 3: Report
 
-유사도 70% 이상인 쌍만 내림차순으로 정렬하여 보여줍니다.
+Displays only pairs with 70%+ similarity, sorted in descending order.
 
 ```
 #1  executing-plans ↔ subagent-driven-development
@@ -50,20 +50,20 @@ Claude Code에서 아래와 같이 요청하면 자동으로 스킬이 트리거
     Source: plugin ↔ plugin
 ```
 
-| 등급 | 유사도 | 의미 |
-|------|--------|------|
-| 🔴 | 90%+ | 제거 후보 |
-| 🟡 | 70-89% | 검토 필요 |
-| 🟢 | <70% | 고유 (리포트 제외) |
+| Grade | Similarity | Meaning |
+|-------|-----------|---------|
+| 🔴 | 90%+ | Remove candidate |
+| 🟡 | 70-89% | Review suggested |
+| 🟢 | <70% | Unique (excluded from report) |
 
-### Stage 4: 대화형 제거 안내
+### Stage 4: Interactive Removal
 
-유사 쌍을 하나씩 보여주며 사용자에게 제거/유지를 묻습니다. 최종 삭제 전 확인 게이트를 거칩니다.
+Presents similar pairs one at a time, asking you to remove or keep each. A final confirmation gate is required before any deletion.
 
-- **개인 스킬**: 디렉토리 직접 삭제
-- **플러그인 스킬**: 직접 삭제하지 않고 비활성화/제거 방법 안내
+- **Personal skills**: Deletes the skill directory directly
+- **Plugin skills**: Never deletes directly — provides guidance on deactivation or removal
 
-## 프로젝트 구조
+## Project Structure
 
 ```
 skills-cleaner/
@@ -78,6 +78,6 @@ skills-cleaner/
         └── 2026-03-19-skills-cleaner-design.md
 ```
 
-## 라이선스
+## License
 
 MIT
