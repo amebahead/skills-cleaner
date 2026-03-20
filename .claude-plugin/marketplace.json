@@ -16,7 +16,7 @@
         "name": "amebahead",
         "email": "dowitcher@naver.com"
       },
-      "keywords": ["skills", "cleanup", "similarity", "duplicates", "organization"],
+      "keywords": ["skills", "cleanup", "similarity", "duplicates", "organization", "list", "search"],
       "homepage": "https://github.com/amebahead/skills-cleaner"
     }
   ]

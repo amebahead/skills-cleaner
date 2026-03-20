@@ -9,5 +9,5 @@
   "homepage": "https://github.com/amebahead/skills-cleaner",
   "repository": "https://github.com/amebahead/skills-cleaner",
   "license": "MIT",
-  "keywords": ["skills", "cleanup", "similarity", "duplicates", "organization"]
+  "keywords": ["skills", "cleanup", "similarity", "duplicates", "organization", "list", "search"]
 }

@@ -1,6 +1,6 @@
 # Skills Cleaner
 
-A Claude Code plugin that compares installed skills for similarity, identifies overlapping or redundant skills, and interactively guides you through cleanup.
+A Claude Code plugin for managing installed skills — list, search, and clean up duplicates.
 
 ## Installation
 
@@ -16,33 +16,58 @@ Or within Claude Code:
 /plugin install skills-cleaner
 ```
 
-## Usage
+## Commands
 
-The skill triggers automatically when you ask Claude Code things like:
+| Command | Description |
+|---------|-------------|
+| `/list-skills` | List all installed skills grouped by plugin |
+| `/search-skills` | Search for a skill by name and show its path |
+| `/clean-skills` | Compare skills for similarity and clean up duplicates |
 
-- "Clean up my skills"
-- "Check for duplicate skills"
-- "Compare installed skills"
+### /list-skills
 
-## How It Works
+Shows all installed skills grouped by source (personal or plugin name).
 
-A 4-stage pipeline:
+```
+Installed Skills (16 total)
+
+personal (2 skills)
+  my-custom-skill       Custom automation tool
+  my-helper             Helper for daily tasks
+
+superpowers (10 skills)
+  brainstorming         Explore intent and requirements before implementation
+  writing-plans         Create implementation plans from specs
+  ...
+```
+
+### /search-skills
+
+Find a skill by name and see where it's installed.
+
+```
+Search: "debug"  →  2 results
+
+  debugging
+    Source:  superpowers (plugin)
+    Path:    ~/.claude/plugins/cache/superpowers/skills/systematic-debugging/SKILL.md
+
+  debug-helper
+    Source:  personal
+    Path:    ~/.claude/skills/debug-helper/SKILL.md
+```
+
+### /clean-skills
+
+Compares all installed skills for similarity, generates a report, and interactively guides cleanup.
+
+**4-stage pipeline:**
 
 ```
 Collect → Parallel Compare → Report → Interactive Removal
 ```
 
-### Stage 1: Collect Skills
-
-Scans personal skills (`~/.claude/skills/`) and plugin skills (`~/.claude/plugins/cache/`) for SKILL.md files.
-
-### Stage 2: Parallel Comparison
-
-Uses subagents to compare skill pairs in parallel across 4 dimensions: purpose, trigger, process, and output similarity.
-
-### Stage 3: Report
-
-Displays only pairs with 70%+ similarity, sorted in descending order.
+Report shows only 70%+ similarity pairs:
 
 ```
 #1  executing-plans  VS  subagent-driven-development
@@ -55,9 +80,7 @@ Displays only pairs with 70%+ similarity, sorted in descending order.
 | 🟡 | 70-89% | Review suggested |
 | 🟢 | <70% | Unique (excluded from report) |
 
-### Stage 4: Interactive Removal
-
-Presents similar pairs one at a time, asking you to remove or keep each. A final confirmation gate is required before any deletion.
+Then presents similar pairs one at a time for interactive removal with a final confirmation gate.
 
 - **Personal skills**: Deletes the skill directory directly
 - **Plugin skills**: Never deletes directly — provides guidance on deactivation or removal
@@ -70,7 +93,11 @@ skills-cleaner/
 │   ├── plugin.json
 │   └── marketplace.json
 ├── skills/
-│   └── skills-cleaner/
+│   ├── list-skills/
+│   │   └── SKILL.md
+│   ├── search-skills/
+│   │   └── SKILL.md
+│   └── clean-skills/
 │       └── SKILL.md
 └── docs/
     └── superpowers/specs/
