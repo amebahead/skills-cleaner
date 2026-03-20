@@ -1,0 +1,13 @@
+{
+  "name": "skills-cleaner",
+  "description": "Compare installed skills for similarity, identify overlapping functionality, and interactively clean up redundant skills",
+  "version": "1.0.0",
+  "author": {
+    "name": "amebahead",
+    "email": "amebahead@naver.com"
+  },
+  "homepage": "https://github.com/amebahead/skills-cleaner",
+  "repository": "https://github.com/amebahead/skills-cleaner",
+  "license": "MIT",
+  "keywords": ["skills", "cleanup", "similarity", "duplicates", "organization"]
+}

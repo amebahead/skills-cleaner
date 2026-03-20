@@ -1,0 +1,23 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "skills-cleaner",
+  "description": "Marketplace for Skills Cleaner plugin",
+  "owner": {
+    "name": "amebahead",
+    "email": "amebahead@naver.com"
+  },
+  "plugins": [
+    {
+      "name": "skills-cleaner",
+      "description": "Compare installed skills for similarity, identify overlapping functionality, and interactively clean up redundant skills",
+      "version": "1.0.0",
+      "source": "./",
+      "author": {
+        "name": "amebahead",
+        "email": "amebahead@naver.com"
+      },
+      "keywords": ["skills", "cleanup", "similarity", "duplicates", "organization"],
+      "homepage": "https://github.com/amebahead/skills-cleaner"
+    }
+  ]
+}
