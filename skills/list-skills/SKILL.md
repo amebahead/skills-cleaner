@@ -14,47 +14,43 @@ Show all installed skills with their source plugin and path.
 
 ## Process
 
-### Step 1: Collect
+### Step 1: Collect via Script
 
-Scan both paths for SKILL.md files:
+Run the bundled collection script — it scans both paths and outputs JSON in one pass:
+
+```bash
+python3 "$(dirname "$SKILL_PATH")/scripts/collect_skills.py"
+```
+
+If `$SKILL_PATH` is not available, use the script's absolute path from this skill's directory.
+
+The script scans:
 1. `~/.claude/skills/**/SKILL.md` — personal skills
 2. `~/.claude/plugins/cache/**/SKILL.md` — plugin skills
 
-Extract from each: name (from frontmatter), description (from frontmatter), file path, source type.
+It extracts name and description from frontmatter, deduplicates across versions, and returns a sorted JSON array.
 
-### Step 2: Identify Plugin Names
+### Step 2: Format the Output
 
-For plugin skills, extract the plugin name from the cache path structure:
-`~/.claude/plugins/cache/<plugin-name>/...`
-
-For personal skills, label as `personal`.
-
-### Step 3: Display
-
-Group by source and display in this format:
+Parse the JSON and display using this exact format:
 
 ```
-Installed Skills (16 total)
+Installed Skills (N total)
 
-personal (2 skills)
+personal (M skills)
   my-custom-skill       Custom automation tool
   my-helper             Helper for daily tasks
 
-superpowers (10 skills)
+superpowers (14 skills)
   brainstorming         Explore intent and requirements before implementation
   writing-plans         Create implementation plans from specs
-  debugging             Systematic debugging workflow
-  ...
-
-other-plugin (4 skills)
-  some-skill            Description here
   ...
 ```
 
 ### Display Rules
 
-- Group by plugin name, personal skills first
+- Group by plugin name, personal skills first, then plugin groups alphabetically
 - Sort skills alphabetically within each group
-- Show skill name and description in two columns
-- Truncate description at 60 characters if needed
+- Show skill name and description in two columns, aligned
+- Truncate description at 60 characters with `...` if needed
 - Show total count in the header and per-group count
