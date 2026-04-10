@@ -26,6 +26,13 @@ Examples:
 
 Show the terminal output directly to the user — no additional formatting needed, the script handles it.
 
+## Token Tracking
+
+Token usage is captured in real-time by the `Stop` hook. When Claude finishes a response after a skill invocation, the hook reads the transcript tail to extract `output_tokens` and records them in the JSONL log.
+
+- Claude-initiated skill calls (`source: "claude"`) include `output_tokens` in the log
+- User-initiated `/skill-name` calls (`source: "user"`) show `-` for tokens since they bypass the Skill tool
+
 ## If No Data Found
 
 The tracking hooks log skill invocations to `~/.claude/skill-usage.jsonl`. If the file is missing or empty, the hooks may not be configured. Check that `~/.claude/settings.json` (or the plugin's `plugin.json`) has:

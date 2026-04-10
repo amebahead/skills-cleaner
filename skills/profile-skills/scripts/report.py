@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Skill usage report generator — clean terminal output."""
+"""Skill usage report generator — reads JSONL only, no transcript parsing."""
 import json
 import os
-import sys
 import argparse
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
 LOG_FILE = os.path.expanduser("~/.claude/skill-usage.jsonl")
@@ -43,6 +42,15 @@ def load_entries(period=None):
     return entries
 
 
+def fmt_tokens(n):
+    """Format token count: 1234 -> '1.2K', 12345 -> '12.3K', 123 -> '123'."""
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}K"
+    return str(n)
+
+
 def report(period=None, top=None):
     entries = load_entries(period)
 
@@ -62,12 +70,27 @@ def report(period=None, top=None):
     total = sum(counts.values())
     items = counts.most_common(top)
 
+    # Aggregate tokens per skill from JSONL entries
+    skill_tokens = defaultdict(int)
+    for e in entries:
+        tokens = e.get("output_tokens", 0)
+        if tokens:
+            skill_tokens[e["skill"]] += tokens
+
+    has_tokens = bool(skill_tokens)
+
     # Column sizing
     max_name = max(len(name) for name, _ in items)
     col = max(max_name, 12)
     max_count_len = max(len(str(c)) for _, c in items)
     cw = max(max_count_len, 5)
-    line_w = col + cw + 5
+
+    if has_tokens:
+        tw = 8
+        line_w = col + cw + tw + 8
+    else:
+        tw = 0
+        line_w = col + cw + 5
 
     # Period label
     labels = {"day": "last 24h", "week": "last 7 days", "month": "last 30 days"}
@@ -76,14 +99,29 @@ def report(period=None, top=None):
     print()
     print(f"  Skill Usage ({period_label})")
     print(f"  {'=' * line_w}")
-    print(f"  {'Skill':<{col}}  {'Count':>{cw}}")
-    print(f"  {'-' * col}  {'-' * cw}")
 
+    if has_tokens:
+        print(f"  {'Skill':<{col}}  {'Count':>{cw}}  {'Tokens':>{tw}}")
+        print(f"  {'-' * col}  {'-' * cw}  {'-' * tw}")
+    else:
+        print(f"  {'Skill':<{col}}  {'Count':>{cw}}")
+        print(f"  {'-' * col}  {'-' * cw}")
+
+    total_tokens = 0
     for skill, count in items:
-        print(f"  {skill:<{col}}  {count:>{cw}}")
+        tok = skill_tokens.get(skill, 0)
+        total_tokens += tok
+        if has_tokens:
+            tok_str = fmt_tokens(tok) if tok else "-"
+            print(f"  {skill:<{col}}  {count:>{cw}}  {tok_str:>{tw}}")
+        else:
+            print(f"  {skill:<{col}}  {count:>{cw}}")
 
     print(f"  {'=' * line_w}")
-    print(f"  Total: {total} triggers | {len(counts)} unique skills")
+    summary = f"  Total: {total} triggers | {len(counts)} unique skills"
+    if has_tokens and total_tokens:
+        summary += f" | {fmt_tokens(total_tokens)} output tokens"
+    print(summary)
 
     if top and len(counts) > top:
         print(f"  (showing top {top} of {len(counts)})")
