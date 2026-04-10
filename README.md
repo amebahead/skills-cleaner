@@ -88,20 +88,22 @@ Then presents similar pairs one at a time for interactive removal with a final c
 
 ### /profile-skills
 
-Shows skill usage statistics from tracked data.
+Shows skill usage statistics with per-skill token consumption.
 
 ```
   Skill Usage (all time)
-  ============================
-  Skill             Count
-  ----------------  -----
-  brainstorming         12
-  list-skills            8
-  clean-skills           5
-  ============================
-  Total: 25 triggers | 3 unique skills
+  ===============================================
+  Skill                       Count    Tokens
+  --------------------------  -----  --------
+  brainstorming                  12    45.2K
+  list-skills                     8    12.8K
+  clean-skills                    5     8.3K
+  ===============================================
+  Total: 25 triggers | 3 unique skills | 66.3K output tokens
   Period: 2026-04-01 -> 2026-04-10
 ```
+
+Token data is extracted from session transcripts (`~/.claude/projects/`) by tracing each Skill tool invocation through its response turn.
 
 Options:
 - `--period day|week|month|all` — Filter by time period
