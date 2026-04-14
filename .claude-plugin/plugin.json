@@ -1,7 +1,7 @@
 {
   "name": "skills-cleaner",
-  "description": "Compare installed skills for similarity, identify overlapping functionality, and interactively clean up redundant skills",
-  "version": "1.0.0",
+  "description": "Compare installed skills for similarity, identify overlapping functionality, and interactively clean up redundant skills. Track skill usage statistics.",
+  "version": "1.1.0",
   "author": {
     "name": "amebahead",
     "email": "dowitcher@naver.com"
@@ -9,5 +9,38 @@
   "homepage": "https://github.com/amebahead/skills-cleaner",
   "repository": "https://github.com/amebahead/skills-cleaner",
   "license": "MIT",
-  "keywords": ["skills", "cleanup", "similarity", "duplicates", "organization", "list", "search"]
+  "keywords": ["skills", "cleanup", "similarity", "duplicates", "organization", "list", "search", "profile", "usage", "tracking"],
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/track-skill-start.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/track-skill-prompt.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/track-skill-stop.sh"
+          }
+        ]
+      }
+    ]
+  }
 }

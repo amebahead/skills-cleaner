@@ -1,6 +1,6 @@
 # Skills Cleaner
 
-A Claude Code plugin for managing installed skills — list, search, and clean up duplicates.
+A Claude Code plugin for managing installed skills — list, search, clean up duplicates, and track usage.
 
 ## Installation
 
@@ -23,6 +23,7 @@ Or within Claude Code:
 | `/list-skills` | List all installed skills grouped by plugin |
 | `/search-skills` | Search for a skill by name and show its path |
 | `/clean-skills` | Compare skills for similarity and clean up duplicates |
+| `/profile-skills` | Show skill usage statistics and reports |
 
 ### /list-skills
 
@@ -84,6 +85,46 @@ Then presents similar pairs one at a time for interactive removal with a final c
 
 - **Personal skills**: Deletes the skill directory directly
 - **Plugin skills**: Never deletes directly — provides guidance on deactivation or removal
+
+### /profile-skills
+
+Shows skill usage statistics with per-skill token consumption.
+
+```
+  Skill Usage Report (all time)
+
+   #  Skill                                     Tokens  Calls
+   1  superpowers:subagent-driven-development    10.0K      1
+   2  superpowers:brainstorming                   8.2K      3
+   3  superpowers:receiving-code-review           2.6K      1
+   4  skills-cleaner:profile-skills               1.2K      3
+
+  Total: 22.0K tokens | 8 calls | 4 skills
+  Period: 2026-04-13 ~ 2026-04-14
+```
+
+Token data is tracked for both Claude-initiated and user-initiated skill calls. The `Stop` hook extracts `output_tokens` from the session transcript when Claude finishes a response.
+
+Options:
+- `--period day|week|month|all` — Filter by time period
+- `--top N` — Show only top N skills
+
+## Usage Tracking
+
+This plugin automatically tracks skill usage via three hooks registered in `plugin.json`:
+
+| Hook | Event | Role |
+|------|-------|------|
+| `track-skill-start.sh` | `PostToolUse` (Skill matcher) | Records pending entry for Claude-initiated skill calls |
+| `track-skill-prompt.sh` | `UserPromptSubmit` | Records pending entry for user-initiated `/skill-name` calls |
+| `track-skill-stop.sh` | `Stop` | Extracts `output_tokens` from transcript and writes final log entry |
+
+Usage data is logged to `~/.claude/skill-usage.jsonl`:
+
+```jsonl
+{"skill":"brainstorming","ts":"2026-04-10T02:19:18Z","session":"abc123","source":"claude","output_tokens":2566}
+{"skill":"list-skills","ts":"2026-04-10T03:00:00Z","session":"def456","source":"user","output_tokens":1234}
+```
 
 ## License
 
