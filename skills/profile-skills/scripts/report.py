@@ -67,60 +67,43 @@ def report(period=None, top=None):
         return
 
     counts = Counter(e["skill"] for e in entries)
-    total = sum(counts.values())
-    items = counts.most_common(top)
+    total_calls = sum(counts.values())
 
-    # Aggregate tokens per skill from JSONL entries
+    # Aggregate tokens per skill
     skill_tokens = defaultdict(int)
     for e in entries:
         tokens = e.get("output_tokens", 0)
         if tokens:
             skill_tokens[e["skill"]] += tokens
 
-    has_tokens = bool(skill_tokens)
+    # Sort by tokens desc; skills with no tokens go to the bottom
+    skills_sorted = sorted(
+        counts.keys(),
+        key=lambda s: (skill_tokens.get(s, 0) == 0, -skill_tokens.get(s, 0)),
+    )
+    if top:
+        skills_sorted = skills_sorted[:top]
 
-    # Column sizing
-    max_name = max(len(name) for name, _ in items)
-    col = max(max_name, 12)
-    max_count_len = max(len(str(c)) for _, c in items)
-    cw = max(max_count_len, 5)
-
-    if has_tokens:
-        tw = 8
-        line_w = col + cw + tw + 8
-    else:
-        tw = 0
-        line_w = col + cw + 5
+    total_tokens = sum(skill_tokens.values())
 
     # Period label
     labels = {"day": "last 24h", "week": "last 7 days", "month": "last 30 days"}
     period_label = labels.get(period, "all time")
 
+    # Dynamic skill column width based on longest name
+    SKILL_W = max(len(s) for s in skills_sorted) if skills_sorted else 5
+    SKILL_W = max(SKILL_W, 5)  # minimum width for "Skill" header
     print()
-    print(f"  Skill Usage ({period_label})")
-    print(f"  {'=' * line_w}")
-
-    if has_tokens:
-        print(f"  {'Skill':<{col}}  {'Count':>{cw}}  {'Tokens':>{tw}}")
-        print(f"  {'-' * col}  {'-' * cw}  {'-' * tw}")
-    else:
-        print(f"  {'Skill':<{col}}  {'Count':>{cw}}")
-        print(f"  {'-' * col}  {'-' * cw}")
-
-    total_tokens = 0
-    for skill, count in items:
+    print(f"  Skill Usage Report ({period_label})")
+    print()
+    print(f"  {'#':>2}  {'Skill':<{SKILL_W}}  {'Tokens':>7}  {'Calls':>5}")
+    for rank, skill in enumerate(skills_sorted, 1):
         tok = skill_tokens.get(skill, 0)
-        total_tokens += tok
-        if has_tokens:
-            tok_str = fmt_tokens(tok) if tok else "-"
-            print(f"  {skill:<{col}}  {count:>{cw}}  {tok_str:>{tw}}")
-        else:
-            print(f"  {skill:<{col}}  {count:>{cw}}")
+        tok_str = fmt_tokens(tok) if tok else "-"
+        print(f"  {rank:>2}  {skill:<{SKILL_W}}  {tok_str:>7}  {counts[skill]:>5}")
 
-    print(f"  {'=' * line_w}")
-    summary = f"  Total: {total} triggers | {len(counts)} unique skills"
-    if has_tokens and total_tokens:
-        summary += f" | {fmt_tokens(total_tokens)} output tokens"
+    print()
+    summary = f"  Total: {fmt_tokens(total_tokens)} tokens | {total_calls} calls | {len(counts)} skills"
     print(summary)
 
     if top and len(counts) > top:
@@ -141,7 +124,7 @@ def report(period=None, top=None):
         if earliest == latest:
             print(f"  Period: {earliest}")
         else:
-            print(f"  Period: {earliest} -> {latest}")
+            print(f"  Period: {earliest} ~ {latest}")
 
     print()
 

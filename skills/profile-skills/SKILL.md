@@ -30,8 +30,7 @@ Show the terminal output directly to the user — no additional formatting neede
 
 Token usage is captured in real-time by the `Stop` hook. When Claude finishes a response after a skill invocation, the hook reads the transcript tail to extract `output_tokens` and records them in the JSONL log.
 
-- Claude-initiated skill calls (`source: "claude"`) include `output_tokens` in the log
-- User-initiated `/skill-name` calls (`source: "user"`) show `-` for tokens since they bypass the Skill tool
+- Both Claude-initiated (`source: "claude"`) and user-initiated (`source: "user"`) calls include `output_tokens` in the log
 
 ## If No Data Found
 
@@ -47,9 +46,10 @@ Both hooks are bundled with this plugin and registered automatically via `plugin
 Each line in `skill-usage.jsonl` is a JSON object:
 
 ```jsonl
-{"skill":"brainstorming","ts":"2026-04-10T02:19:18Z","session":"abc123","source":"claude"}
-{"skill":"list-skills","ts":"2026-04-10T03:00:00Z","session":"def456","source":"user"}
+{"skill":"brainstorming","ts":"2026-04-10T02:19:18Z","session":"abc123","source":"claude","output_tokens":2566}
+{"skill":"list-skills","ts":"2026-04-10T03:00:00Z","session":"def456","source":"user","output_tokens":1234}
 ```
 
 - `source: "claude"` — Claude invoked the skill via the Skill tool
 - `source: "user"` — User typed `/skill-name` directly
+- Both sources include `output_tokens` extracted from the transcript by the `Stop` hook

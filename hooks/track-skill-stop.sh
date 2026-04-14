@@ -74,13 +74,14 @@ while IFS= read -r line; do
     SESSION=$(echo "$line" | python3 -c "import sys,json;print(json.load(sys.stdin).get('session',''))" 2>/dev/null)
     TRANSCRIPT=$(echo "$line" | python3 -c "import sys,json;print(json.load(sys.stdin).get('transcript',''))" 2>/dev/null)
     TS=$(echo "$line" | python3 -c "import sys,json;print(json.load(sys.stdin).get('ts',''))" 2>/dev/null)
+    SOURCE=$(echo "$line" | python3 -c "import sys,json;print(json.load(sys.stdin).get('source','claude'))" 2>/dev/null)
 
     [ -z "$SKILL" ] && continue
 
     TOKENS=$(extract_tokens "$TRANSCRIPT")
     [ -z "$TOKENS" ] && TOKENS=0
 
-    echo "{\"skill\":\"$SKILL\",\"ts\":\"$TS\",\"session\":\"$SESSION\",\"source\":\"claude\",\"output_tokens\":$TOKENS}" >> "$LOG_FILE"
+    echo "{\"skill\":\"$SKILL\",\"ts\":\"$TS\",\"session\":\"$SESSION\",\"source\":\"$SOURCE\",\"output_tokens\":$TOKENS}" >> "$LOG_FILE"
 
 done < "$PENDING"
 

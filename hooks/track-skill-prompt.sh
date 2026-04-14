@@ -41,7 +41,15 @@ else:
 " 2>/dev/null)
 
 if [ -n "$SKILL" ]; then
-    LOG_FILE="$HOME/.claude/skill-usage.jsonl"
+    TRANSCRIPT_PATH=$(echo "$INPUT" | python3 -c "
+import sys, json
+try:
+    print(json.load(sys.stdin).get('transcript_path', ''))
+except:
+    print('')
+" 2>/dev/null)
+
+    PENDING="$HOME/.claude/.skill-pending-${SESSION_ID}.jsonl"
     TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    echo "{\"skill\":\"$SKILL\",\"ts\":\"$TS\",\"session\":\"$SESSION_ID\",\"source\":\"user\"}" >> "$LOG_FILE"
+    echo "{\"skill\":\"$SKILL\",\"session\":\"$SESSION_ID\",\"transcript\":\"$TRANSCRIPT_PATH\",\"ts\":\"$TS\",\"source\":\"user\"}" >> "$PENDING"
 fi
