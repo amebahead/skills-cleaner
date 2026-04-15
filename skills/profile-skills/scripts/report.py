@@ -94,8 +94,7 @@ def serve_html(html):
 
 
 def build_html(counts, skill_tokens, skills_by_calls, skills_by_tokens,
-               session_skills, sessions_sorted, all_skills_in_heatmap,
-               session_times, period):
+               skill_descs, period):
     labels = {"day": "last 24h", "week": "last 7 days", "month": "last 30 days"}
     period_label = labels.get(period, "all time")
 
@@ -131,35 +130,16 @@ def build_html(counts, skill_tokens, skills_by_calls, skills_by_tokens,
           <span class="bar-value">{fmt_tokens(t)}</span>
         </div>"""
 
-    # Build heatmap
-    max_heat = 0
-    for sid in sessions_sorted:
-        for skill in all_skills_in_heatmap:
-            v = session_skills[sid].get(skill, 0)
-            if v > max_heat:
-                max_heat = v
-    max_heat = max_heat or 1
-
-    skill_headers = "".join(
-        f'<div class="hm-header" title="{_esc(s)}">{_esc(s)}</div>' for s in all_skills_in_heatmap
-    )
-
-    heatmap_rows = ""
-    for sid in sessions_sorted:
-        ts_raw = session_times.get(sid, "")
-        date_str = ts_raw[:10] if len(ts_raw) >= 10 else ""
-        label = f"{sid} {date_str}" if date_str else sid
-        cells = ""
-        for skill in all_skills_in_heatmap:
-            v = session_skills[sid].get(skill, 0)
-            opacity = (v / max_heat) * 0.9 + 0.1 if v > 0 else 0
-            title = f"{_esc(skill)}: {v} calls"
-            cells += f'<div class="hm-cell" style="background:rgba(99,179,237,{opacity:.2f})" title="{title}">{v if v else ""}</div>'
-        heatmap_rows += f"""
-        <div class="hm-row-label">{label}</div>{cells}"""
-
-    num_skills = len(all_skills_in_heatmap)
-    grid_cols = f"120px repeat({num_skills}, minmax(50px, 1fr))"
+    # Build skill description table
+    all_skills = sorted(set(skills_by_calls) | set(skills_by_tokens))
+    desc_rows = ""
+    for skill in all_skills:
+        desc = _esc(skill_descs.get(skill, ""))
+        desc_rows += f"""
+        <tr>
+          <td class="desc-name">{_esc(skill)}</td>
+          <td class="desc-text">{desc}</td>
+        </tr>"""
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -187,11 +167,11 @@ def build_html(counts, skill_tokens, skills_by_calls, skills_by_tokens,
   .bar-tokens {{ background: linear-gradient(90deg, #f59e0b, #fbbf24); }}
   .bar-value {{ width: 70px; text-align: right; font-size: 0.85rem; padding-left: 8px; color: #aaa; }}
 
-  /* Heatmap */
-  .heatmap {{ display: grid; grid-template-columns: {grid_cols}; gap: 2px; margin-top: 1rem; overflow-x: auto; }}
-  .hm-header {{ font-size: 0.7rem; text-align: center; color: #888; writing-mode: vertical-rl; transform: rotate(180deg); height: 90px; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; justify-content: center; }}
-  .hm-row-label {{ font-size: 0.75rem; color: #aaa; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-  .hm-cell {{ display: flex; align-items: center; justify-content: center; font-size: 0.7rem; color: rgba(255,255,255,0.7); border-radius: 3px; min-height: 24px; }}
+  /* Skill descriptions */
+  .desc-table {{ width: 100%; border-collapse: collapse; margin-top: 1rem; }}
+  .desc-table td {{ padding: 0.5rem 0.75rem; border-bottom: 1px solid #2a2a3e; vertical-align: top; }}
+  .desc-name {{ width: 200px; font-weight: 600; color: #63b3ed; font-size: 0.85rem; white-space: nowrap; }}
+  .desc-text {{ color: #aaa; font-size: 0.8rem; line-height: 1.4; }}
 </style>
 </head>
 <body>
@@ -204,15 +184,26 @@ def build_html(counts, skill_tokens, skills_by_calls, skills_by_tokens,
   <h2>Skill Usage (Tokens)</h2>
   {tokens_bars}
 
-  <h2>Session &times; Skill Heatmap</h2>
-  <div class="heatmap">
-    <div class="hm-corner"></div>
-    {skill_headers}
-    {heatmap_rows}
-  </div>
+  <h2>Skill Descriptions</h2>
+  <table class="desc-table">
+    {desc_rows}
+  </table>
 </body>
 </html>"""
     return html
+
+
+def _collect_skill_descs():
+    """Build {short_name: description} map from installed skills."""
+    script_dir = Path(__file__).resolve().parent
+    collect_script = script_dir / "../../list-skills/scripts/collect_skills.py"
+    if not collect_script.exists():
+        return {}
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("collect_skills", collect_script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return {e["name"]: e.get("description", "") for e in mod.collect()}
 
 
 def detail_report(period=None, top=None):
@@ -234,23 +225,10 @@ def detail_report(period=None, top=None):
         skills_by_calls = skills_by_calls[:top]
         skills_by_tokens = skills_by_tokens[:top]
 
-    session_skills = defaultdict(lambda: defaultdict(int))
-    session_times = {}
-    for e in entries:
-        sid = e["session"][:8]
-        skill = normalize_skill(e["skill"])
-        session_skills[sid][skill] += 1
-        if sid not in session_times:
-            session_times[sid] = e.get("ts", "")
-
-    sessions_sorted = sorted(session_times.keys(), key=lambda s: session_times[s])
-    all_skills_in_heatmap = sorted(set(
-        skill for row in session_skills.values() for skill in row
-    ))
+    skill_descs = _collect_skill_descs()
 
     html = build_html(counts, skill_tokens, skills_by_calls, skills_by_tokens,
-                      session_skills, sessions_sorted, all_skills_in_heatmap,
-                      session_times, period)
+                      skill_descs, period)
     serve_html(html)
 
 
