@@ -51,6 +51,8 @@ Opens an interactive HTML dashboard in the browser with:
 - **Skill Usage (Tokens)** — horizontal bar chart sorted by token consumption
 - **Skill Descriptions** — table showing what each tracked skill does
 
+![Detail Report](docs/images/detail-report.png)
+
 The HTML is self-contained (no external dependencies) and served on `localhost:8765`.
 
 Options:
