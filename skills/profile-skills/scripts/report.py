@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Skill usage report generator — reads JSONL only, no transcript parsing."""
+import html as _html
 import json
 import os
 import argparse
+import webbrowser
+import tempfile
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from pathlib import Path
 
 LOG_FILE = os.path.expanduser("~/.claude/skill-usage.jsonl")
 
@@ -42,6 +47,16 @@ def load_entries(period=None):
     return entries
 
 
+def normalize_skill(name):
+    """Merge qualified and short skill names: 'plugin:skill' -> 'skill'."""
+    return name.split(":", 1)[1] if ":" in name else name
+
+
+def _esc(s):
+    """HTML-escape a string for safe interpolation into HTML."""
+    return _html.escape(str(s))
+
+
 def fmt_tokens(n):
     """Format token count: 1234 -> '1.2K', 12345 -> '12.3K', 123 -> '123'."""
     if n >= 1_000_000:
@@ -49,6 +64,172 @@ def fmt_tokens(n):
     if n >= 1_000:
         return f"{n / 1_000:.1f}K"
     return str(n)
+
+
+def serve_html(html):
+    out = Path(tempfile.gettempdir()) / "skill-report.html"
+    out.write_text(html, encoding="utf-8")
+    port = 8765
+
+    class Handler(SimpleHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(out.read_bytes())
+        def log_message(self, format, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", port), Handler)
+    url = f"http://127.0.0.1:{port}"
+    print(f"\n  Detail report: {url}")
+    print(f"  Press Ctrl+C to stop.\n")
+    webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n  Server stopped.")
+    finally:
+        server.server_close()
+
+
+def build_html(counts, skill_tokens, skills_by_calls, skills_by_tokens,
+               skill_descs, period):
+    labels = {"day": "last 24h", "week": "last 7 days", "month": "last 30 days"}
+    period_label = labels.get(period, "all time")
+
+    max_calls = max(counts[s] for s in skills_by_calls) if skills_by_calls else 1
+    max_tokens = max(skill_tokens.get(s, 0) for s in skills_by_tokens) if skills_by_tokens else 1
+    max_tokens = max_tokens or 1
+
+    # Build calls bars HTML
+    calls_bars = ""
+    for skill in skills_by_calls:
+        c = counts[skill]
+        pct = (c / max_calls) * 100
+        calls_bars += f"""
+        <div class="bar-row">
+          <span class="bar-label">{_esc(skill)}</span>
+          <div class="bar-track">
+            <div class="bar bar-calls" style="width:{pct:.1f}%"></div>
+          </div>
+          <span class="bar-value">{c}</span>
+        </div>"""
+
+    # Build tokens bars HTML
+    tokens_bars = ""
+    for skill in skills_by_tokens:
+        t = skill_tokens.get(skill, 0)
+        pct = (t / max_tokens) * 100
+        tokens_bars += f"""
+        <div class="bar-row">
+          <span class="bar-label">{_esc(skill)}</span>
+          <div class="bar-track">
+            <div class="bar bar-tokens" style="width:{pct:.1f}%"></div>
+          </div>
+          <span class="bar-value">{fmt_tokens(t)}</span>
+        </div>"""
+
+    # Build skill description table
+    all_skills = sorted(set(skills_by_calls) | set(skills_by_tokens))
+    desc_rows = ""
+    for skill in all_skills:
+        desc = _esc(skill_descs.get(skill, ""))
+        desc_rows += f"""
+        <tr>
+          <td class="desc-name">{_esc(skill)}</td>
+          <td class="desc-text">{desc}</td>
+        </tr>"""
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skill Usage Report ({period_label})</title>
+<style>
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{
+    background: #1a1a2e; color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+    padding: 2rem;
+  }}
+  h1 {{ font-size: 1.5rem; margin-bottom: 0.5rem; color: #fff; }}
+  h2 {{ font-size: 1.15rem; margin: 2rem 0 1rem; color: #ccc; border-bottom: 1px solid #333; padding-bottom: 0.4rem; }}
+  .subtitle {{ color: #888; margin-bottom: 2rem; font-size: 0.9rem; }}
+
+  /* Bar charts */
+  .bar-row {{ display: flex; align-items: center; margin-bottom: 0.35rem; }}
+  .bar-label {{ width: 180px; text-align: right; padding-right: 12px; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+  .bar-track {{ flex: 1; background: #2a2a3e; border-radius: 4px; height: 20px; overflow: hidden; }}
+  .bar {{ height: 100%; border-radius: 4px; transition: width 0.3s; }}
+  .bar-calls {{ background: linear-gradient(90deg, #3b82f6, #60a5fa); }}
+  .bar-tokens {{ background: linear-gradient(90deg, #f59e0b, #fbbf24); }}
+  .bar-value {{ width: 70px; text-align: right; font-size: 0.85rem; padding-left: 8px; color: #aaa; }}
+
+  /* Skill descriptions */
+  .desc-table {{ width: 100%; border-collapse: collapse; margin-top: 1rem; }}
+  .desc-table td {{ padding: 0.5rem 0.75rem; border-bottom: 1px solid #2a2a3e; vertical-align: top; }}
+  .desc-name {{ width: 200px; font-weight: 600; color: #63b3ed; font-size: 0.85rem; white-space: nowrap; }}
+  .desc-text {{ color: #aaa; font-size: 0.8rem; line-height: 1.4; }}
+</style>
+</head>
+<body>
+  <h1>Skill Usage Report</h1>
+  <div class="subtitle">{period_label}</div>
+
+  <h2>Skill Usage (Calls)</h2>
+  {calls_bars}
+
+  <h2>Skill Usage (Tokens)</h2>
+  {tokens_bars}
+
+  <h2>Skill Descriptions</h2>
+  <table class="desc-table">
+    {desc_rows}
+  </table>
+</body>
+</html>"""
+    return html
+
+
+def _collect_skill_descs():
+    """Build {short_name: description} map from installed skills."""
+    script_dir = Path(__file__).resolve().parent
+    collect_script = script_dir / "../../list-skills/scripts/collect_skills.py"
+    if not collect_script.exists():
+        return {}
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("collect_skills", collect_script)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return {e["name"]: e.get("description", "") for e in mod.collect()}
+
+
+def detail_report(period=None, top=None):
+    entries = load_entries(period)
+    if not entries:
+        print("No skill usage data found.")
+        return
+
+    counts = Counter(normalize_skill(e["skill"]) for e in entries)
+    skill_tokens = defaultdict(int)
+    for e in entries:
+        tokens = e.get("output_tokens", 0)
+        if tokens:
+            skill_tokens[normalize_skill(e["skill"])] += tokens
+
+    skills_by_calls = sorted(counts.keys(), key=lambda s: -counts[s])
+    skills_by_tokens = sorted(counts.keys(), key=lambda s: -skill_tokens.get(s, 0))
+    if top:
+        skills_by_calls = skills_by_calls[:top]
+        skills_by_tokens = skills_by_tokens[:top]
+
+    skill_descs = _collect_skill_descs()
+
+    html = build_html(counts, skill_tokens, skills_by_calls, skills_by_tokens,
+                      skill_descs, period)
+    serve_html(html)
 
 
 def report(period=None, top=None):
@@ -66,7 +247,7 @@ def report(period=None, top=None):
         print()
         return
 
-    counts = Counter(e["skill"] for e in entries)
+    counts = Counter(normalize_skill(e["skill"]) for e in entries)
     total_calls = sum(counts.values())
 
     # Aggregate tokens per skill
@@ -74,7 +255,7 @@ def report(period=None, top=None):
     for e in entries:
         tokens = e.get("output_tokens", 0)
         if tokens:
-            skill_tokens[e["skill"]] += tokens
+            skill_tokens[normalize_skill(e["skill"])] += tokens
 
     # Sort by tokens desc; skills with no tokens go to the bottom
     skills_sorted = sorted(
@@ -137,10 +318,14 @@ def main():
         default=None,
     )
     parser.add_argument("--top", "-t", type=int, default=None)
+    parser.add_argument("--detail", "-d", action="store_true", help="Open HTML report in browser")
     args = parser.parse_args()
 
     period = args.period if args.period != "all" else None
-    report(period=period, top=args.top)
+    if args.detail:
+        detail_report(period=period, top=args.top)
+    else:
+        report(period=period, top=args.top)
 
 
 if __name__ == "__main__":

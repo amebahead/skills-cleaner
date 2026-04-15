@@ -18,13 +18,20 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/profile-skills/scripts/report.py" [OPTIONS
 Options:
 - `--period day|week|month|all` — Filter by time period (default: all)
 - `--top N` — Show only top N skills
+- `--detail` — Open an HTML visualization report in the browser (bar charts + heatmap)
 
 Examples:
 - All-time stats: `python3 "${CLAUDE_PLUGIN_ROOT}/skills/profile-skills/scripts/report.py"`
 - This week only: `python3 "${CLAUDE_PLUGIN_ROOT}/skills/profile-skills/scripts/report.py" --period week`
 - Top 5 skills this month: `python3 "${CLAUDE_PLUGIN_ROOT}/skills/profile-skills/scripts/report.py" --period month --top 5`
+- Visual report: `python3 "${CLAUDE_PLUGIN_ROOT}/skills/profile-skills/scripts/report.py" --detail`
+- Visual report (this week): `python3 "${CLAUDE_PLUGIN_ROOT}/skills/profile-skills/scripts/report.py" --detail --period week`
 
-Show the terminal output directly to the user — no additional formatting needed, the script handles it.
+## Output Rules
+
+**ALWAYS paste the script's terminal output verbatim as a fenced code block.** Do not summarize, rephrase, or reformat the table into prose. The script already produces a well-formatted table — show it exactly as printed. No additional commentary is needed before or after the table unless the user asks a follow-up question.
+
+When `--detail` is used, the script opens a browser automatically. Print the URL from script output and tell the user to press Ctrl+C when done.
 
 ## Token Tracking
 
