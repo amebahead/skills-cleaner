@@ -1,7 +1,7 @@
 {
   "name": "skills-cleaner",
   "description": "Compare installed skills for similarity, identify overlapping functionality, and interactively clean up redundant skills. Track skill usage statistics.",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": {
     "name": "amebahead",
     "email": "dowitcher@naver.com"
