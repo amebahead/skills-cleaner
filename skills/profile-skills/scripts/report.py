@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Skill usage report generator — reads JSONL only, no transcript parsing."""
+import html as _html
 import json
 import os
 import argparse
@@ -49,6 +50,11 @@ def load_entries(period=None):
 def normalize_skill(name):
     """Merge qualified and short skill names: 'plugin:skill' -> 'skill'."""
     return name.split(":", 1)[1] if ":" in name else name
+
+
+def _esc(s):
+    """HTML-escape a string for safe interpolation into HTML."""
+    return _html.escape(str(s))
 
 
 def fmt_tokens(n):
@@ -104,7 +110,7 @@ def build_html(counts, skill_tokens, skills_by_calls, skills_by_tokens,
         pct = (c / max_calls) * 100
         calls_bars += f"""
         <div class="bar-row">
-          <span class="bar-label">{skill}</span>
+          <span class="bar-label">{_esc(skill)}</span>
           <div class="bar-track">
             <div class="bar bar-calls" style="width:{pct:.1f}%"></div>
           </div>
@@ -118,7 +124,7 @@ def build_html(counts, skill_tokens, skills_by_calls, skills_by_tokens,
         pct = (t / max_tokens) * 100
         tokens_bars += f"""
         <div class="bar-row">
-          <span class="bar-label">{skill}</span>
+          <span class="bar-label">{_esc(skill)}</span>
           <div class="bar-track">
             <div class="bar bar-tokens" style="width:{pct:.1f}%"></div>
           </div>
@@ -135,7 +141,7 @@ def build_html(counts, skill_tokens, skills_by_calls, skills_by_tokens,
     max_heat = max_heat or 1
 
     skill_headers = "".join(
-        f'<div class="hm-header" title="{s}">{s}</div>' for s in all_skills_in_heatmap
+        f'<div class="hm-header" title="{_esc(s)}">{_esc(s)}</div>' for s in all_skills_in_heatmap
     )
 
     heatmap_rows = ""
@@ -147,7 +153,7 @@ def build_html(counts, skill_tokens, skills_by_calls, skills_by_tokens,
         for skill in all_skills_in_heatmap:
             v = session_skills[sid].get(skill, 0)
             opacity = (v / max_heat) * 0.9 + 0.1 if v > 0 else 0
-            title = f"{skill}: {v} calls"
+            title = f"{_esc(skill)}: {v} calls"
             cells += f'<div class="hm-cell" style="background:rgba(99,179,237,{opacity:.2f})" title="{title}">{v if v else ""}</div>'
         heatmap_rows += f"""
         <div class="hm-row-label">{label}</div>{cells}"""
@@ -186,7 +192,6 @@ def build_html(counts, skill_tokens, skills_by_calls, skills_by_tokens,
   .hm-header {{ font-size: 0.7rem; text-align: center; color: #888; writing-mode: vertical-rl; transform: rotate(180deg); height: 90px; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; justify-content: center; }}
   .hm-row-label {{ font-size: 0.75rem; color: #aaa; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
   .hm-cell {{ display: flex; align-items: center; justify-content: center; font-size: 0.7rem; color: rgba(255,255,255,0.7); border-radius: 3px; min-height: 24px; }}
-  .hm-corner {{ }}
 </style>
 </head>
 <body>
