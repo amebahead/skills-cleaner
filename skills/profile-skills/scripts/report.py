@@ -42,6 +42,11 @@ def load_entries(period=None):
     return entries
 
 
+def normalize_skill(name):
+    """Merge qualified and short skill names: 'plugin:skill' -> 'skill'."""
+    return name.split(":", 1)[1] if ":" in name else name
+
+
 def fmt_tokens(n):
     """Format token count: 1234 -> '1.2K', 12345 -> '12.3K', 123 -> '123'."""
     if n >= 1_000_000:
@@ -66,7 +71,7 @@ def report(period=None, top=None):
         print()
         return
 
-    counts = Counter(e["skill"] for e in entries)
+    counts = Counter(normalize_skill(e["skill"]) for e in entries)
     total_calls = sum(counts.values())
 
     # Aggregate tokens per skill
@@ -74,7 +79,7 @@ def report(period=None, top=None):
     for e in entries:
         tokens = e.get("output_tokens", 0)
         if tokens:
-            skill_tokens[e["skill"]] += tokens
+            skill_tokens[normalize_skill(e["skill"])] += tokens
 
     # Sort by tokens desc; skills with no tokens go to the bottom
     skills_sorted = sorted(
