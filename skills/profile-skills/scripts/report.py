@@ -66,6 +66,46 @@ def fmt_tokens(n):
     return str(n)
 
 
+def fmt_duration(ms):
+    """Format a duration in milliseconds as seconds: 340 -> '0.3s', 14300 -> '14.3s'."""
+    if not ms:
+        return "-"
+    return f"{ms / 1000:.1f}s"
+
+
+def short_model(name):
+    """Trim provider/date suffixes so reports stay readable: claude-opus-4-7-20251022 -> opus-4-7."""
+    if not name:
+        return ""
+    n = name
+    if n.startswith("claude-"):
+        n = n[len("claude-"):]
+    # Drop trailing date suffix like -20251022
+    parts = n.split("-")
+    if parts and parts[-1].isdigit() and len(parts[-1]) >= 6:
+        parts = parts[:-1]
+    return "-".join(parts)
+
+
+def aggregate_per_skill(entries):
+    """Compute per-skill token totals, duration totals, and primary model."""
+    skill_tokens = defaultdict(int)
+    skill_duration = defaultdict(int)
+    skill_models = defaultdict(Counter)
+    for e in entries:
+        s = normalize_skill(e["skill"])
+        skill_tokens[s] += e.get("output_tokens", 0) or 0
+        skill_duration[s] += e.get("duration_ms", 0) or 0
+        model = e.get("model", "") or ""
+        if model:
+            skill_models[s][model] += 1
+    primary_model = {
+        s: (counter.most_common(1)[0][0] if counter else "")
+        for s, counter in skill_models.items()
+    }
+    return skill_tokens, skill_duration, primary_model
+
+
 def serve_html(html):
     out = Path(tempfile.gettempdir()) / "skill-report.html"
     out.write_text(html, encoding="utf-8")
@@ -93,14 +133,20 @@ def serve_html(html):
         server.server_close()
 
 
-def build_html(counts, skill_tokens, skills_by_calls, skills_by_tokens,
-               skill_descs, period):
+def build_html(counts, skill_tokens, skill_duration, primary_model,
+               skills_by_calls, skills_by_tokens, skills_by_duration,
+               skill_info, period):
     labels = {"day": "last 24h", "week": "last 7 days", "month": "last 30 days"}
     period_label = labels.get(period, "all time")
 
     max_calls = max(counts[s] for s in skills_by_calls) if skills_by_calls else 1
     max_tokens = max(skill_tokens.get(s, 0) for s in skills_by_tokens) if skills_by_tokens else 1
     max_tokens = max_tokens or 1
+    max_duration = max(
+        (skill_duration.get(s, 0) // counts[s] if counts[s] else 0)
+        for s in skills_by_duration
+    ) if skills_by_duration else 1
+    max_duration = max_duration or 1
 
     # Build calls bars HTML
     calls_bars = ""
@@ -130,14 +176,42 @@ def build_html(counts, skill_tokens, skills_by_calls, skills_by_tokens,
           <span class="bar-value">{fmt_tokens(t)}</span>
         </div>"""
 
-    # Build skill description table
-    all_skills = sorted(set(skills_by_calls) | set(skills_by_tokens))
+    # Build duration bars (average per call)
+    duration_bars = ""
+    for skill in skills_by_duration:
+        calls = counts[skill] or 1
+        avg = skill_duration.get(skill, 0) // calls
+        pct = (avg / max_duration) * 100 if max_duration else 0
+        duration_bars += f"""
+        <div class="bar-row">
+          <span class="bar-label">{_esc(skill)}</span>
+          <div class="bar-track">
+            <div class="bar bar-duration" style="width:{pct:.1f}%"></div>
+          </div>
+          <span class="bar-value">{fmt_duration(avg)}</span>
+        </div>"""
+
+    # Build skill description rows grouped by plugin.
+    # Display label: "skill-name (plugin-name)"; rows are ordered by plugin,
+    # then by skill name so that entries sharing a plugin sit together.
+    all_skills = set(skills_by_calls) | set(skills_by_tokens) | set(skills_by_duration)
+
+    def _sort_key(skill):
+        info = skill_info.get(skill, {}) if isinstance(skill_info, dict) else {}
+        plugins = info.get("plugins", []) or []
+        primary_plugin = plugins[0] if plugins else "~"  # untracked → bottom
+        return (primary_plugin, skill)
+
     desc_rows = ""
-    for skill in all_skills:
-        desc = _esc(skill_descs.get(skill, ""))
+    for skill in sorted(all_skills, key=_sort_key):
+        info = skill_info.get(skill, {}) if isinstance(skill_info, dict) else {}
+        desc = _esc(info.get("description", ""))
+        plugins = info.get("plugins", []) or []
+        plugin_label = ", ".join(plugins) if plugins else ""
+        label = f"{skill} ({plugin_label})" if plugin_label else skill
         desc_rows += f"""
         <tr>
-          <td class="desc-name">{_esc(skill)}</td>
+          <td class="desc-name">{_esc(label)}</td>
           <td class="desc-text">{desc}</td>
         </tr>"""
 
@@ -165,12 +239,13 @@ def build_html(counts, skill_tokens, skills_by_calls, skills_by_tokens,
   .bar {{ height: 100%; border-radius: 4px; transition: width 0.3s; }}
   .bar-calls {{ background: linear-gradient(90deg, #3b82f6, #60a5fa); }}
   .bar-tokens {{ background: linear-gradient(90deg, #f59e0b, #fbbf24); }}
+  .bar-duration {{ background: linear-gradient(90deg, #10b981, #34d399); }}
   .bar-value {{ width: 70px; text-align: right; font-size: 0.85rem; padding-left: 8px; color: #aaa; }}
 
   /* Skill descriptions */
   .desc-table {{ width: 100%; border-collapse: collapse; margin-top: 1rem; }}
   .desc-table td {{ padding: 0.5rem 0.75rem; border-bottom: 1px solid #2a2a3e; vertical-align: top; }}
-  .desc-name {{ width: 200px; font-weight: 600; color: #63b3ed; font-size: 0.85rem; white-space: nowrap; }}
+  .desc-name {{ width: 280px; font-weight: 600; color: #63b3ed; font-size: 0.85rem; white-space: nowrap; }}
   .desc-text {{ color: #aaa; font-size: 0.8rem; line-height: 1.4; }}
 </style>
 </head>
@@ -184,6 +259,9 @@ def build_html(counts, skill_tokens, skills_by_calls, skills_by_tokens,
   <h2>Skill Usage (Tokens)</h2>
   {tokens_bars}
 
+  <h2>Skill Usage (Avg Duration)</h2>
+  {duration_bars}
+
   <h2>Skill Descriptions</h2>
   <table class="desc-table">
     {desc_rows}
@@ -193,8 +271,12 @@ def build_html(counts, skill_tokens, skills_by_calls, skills_by_tokens,
     return html
 
 
-def _collect_skill_descs():
-    """Build {short_name: description} map from installed skills."""
+def _collect_skill_info():
+    """Build {short_name: {description, plugins}} map from installed skills.
+
+    A short name can exist in multiple plugins (e.g. duplicated across
+    personal + plugin installs), so plugins is a list.
+    """
     script_dir = Path(__file__).resolve().parent
     collect_script = script_dir / "../../list-skills/scripts/collect_skills.py"
     if not collect_script.exists():
@@ -203,7 +285,16 @@ def _collect_skill_descs():
     spec = importlib.util.spec_from_file_location("collect_skills", collect_script)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return {e["name"]: e.get("description", "") for e in mod.collect()}
+    info = {}
+    for e in mod.collect():
+        name = e["name"]
+        plugin = e.get("plugin", "")
+        slot = info.setdefault(name, {"description": e.get("description", ""), "plugins": []})
+        if plugin and plugin not in slot["plugins"]:
+            slot["plugins"].append(plugin)
+        if not slot["description"]:
+            slot["description"] = e.get("description", "")
+    return info
 
 
 def detail_report(period=None, top=None):
@@ -213,22 +304,24 @@ def detail_report(period=None, top=None):
         return
 
     counts = Counter(normalize_skill(e["skill"]) for e in entries)
-    skill_tokens = defaultdict(int)
-    for e in entries:
-        tokens = e.get("output_tokens", 0)
-        if tokens:
-            skill_tokens[normalize_skill(e["skill"])] += tokens
+    skill_tokens, skill_duration, primary_model = aggregate_per_skill(entries)
 
     skills_by_calls = sorted(counts.keys(), key=lambda s: -counts[s])
     skills_by_tokens = sorted(counts.keys(), key=lambda s: -skill_tokens.get(s, 0))
+    skills_by_duration = sorted(
+        counts.keys(),
+        key=lambda s: -(skill_duration.get(s, 0) // counts[s] if counts[s] else 0),
+    )
     if top:
         skills_by_calls = skills_by_calls[:top]
         skills_by_tokens = skills_by_tokens[:top]
+        skills_by_duration = skills_by_duration[:top]
 
-    skill_descs = _collect_skill_descs()
+    skill_info = _collect_skill_info()
 
-    html = build_html(counts, skill_tokens, skills_by_calls, skills_by_tokens,
-                      skill_descs, period)
+    html = build_html(counts, skill_tokens, skill_duration, primary_model,
+                      skills_by_calls, skills_by_tokens, skills_by_duration,
+                      skill_info, period)
     serve_html(html)
 
 
@@ -250,12 +343,7 @@ def report(period=None, top=None):
     counts = Counter(normalize_skill(e["skill"]) for e in entries)
     total_calls = sum(counts.values())
 
-    # Aggregate tokens per skill
-    skill_tokens = defaultdict(int)
-    for e in entries:
-        tokens = e.get("output_tokens", 0)
-        if tokens:
-            skill_tokens[normalize_skill(e["skill"])] += tokens
+    skill_tokens, skill_duration, primary_model = aggregate_per_skill(entries)
 
     # Sort by tokens desc; skills with no tokens go to the bottom
     skills_sorted = sorted(
@@ -266,6 +354,7 @@ def report(period=None, top=None):
         skills_sorted = skills_sorted[:top]
 
     total_tokens = sum(skill_tokens.values())
+    total_duration = sum(skill_duration.values())
 
     # Period label
     labels = {"day": "last 24h", "week": "last 7 days", "month": "last 30 days"}
@@ -274,17 +363,35 @@ def report(period=None, top=None):
     # Dynamic skill column width based on longest name
     SKILL_W = max(len(s) for s in skills_sorted) if skills_sorted else 5
     SKILL_W = max(SKILL_W, 5)  # minimum width for "Skill" header
+
+    models_shown = [short_model(primary_model.get(s, "")) for s in skills_sorted]
+    MODEL_W = max((len(m) for m in models_shown if m), default=5)
+    MODEL_W = max(MODEL_W, 5)  # minimum width for "Model" header
+
     print()
     print(f"  Skill Usage Report ({period_label})")
     print()
-    print(f"  {'#':>2}  {'Skill':<{SKILL_W}}  {'Tokens':>7}  {'Calls':>5}")
+    header = (
+        f"  {'#':>2}  {'Skill':<{SKILL_W}}  {'Tokens':>7}  "
+        f"{'Calls':>5}  {'AvgTime':>7}  {'Model':<{MODEL_W}}"
+    )
+    print(header)
     for rank, skill in enumerate(skills_sorted, 1):
         tok = skill_tokens.get(skill, 0)
         tok_str = fmt_tokens(tok) if tok else "-"
-        print(f"  {rank:>2}  {skill:<{SKILL_W}}  {tok_str:>7}  {counts[skill]:>5}")
+        avg_dur = skill_duration.get(skill, 0) // counts[skill] if counts[skill] else 0
+        dur_str = fmt_duration(avg_dur)
+        model_str = short_model(primary_model.get(skill, "")) or "-"
+        print(
+            f"  {rank:>2}  {skill:<{SKILL_W}}  {tok_str:>7}  "
+            f"{counts[skill]:>5}  {dur_str:>7}  {model_str:<{MODEL_W}}"
+        )
 
     print()
-    summary = f"  Total: {fmt_tokens(total_tokens)} tokens | {total_calls} calls | {len(counts)} skills"
+    summary = (
+        f"  Total: {fmt_tokens(total_tokens)} tokens | {total_calls} calls | "
+        f"{len(counts)} skills | {fmt_duration(total_duration)} runtime"
+    )
     print(summary)
 
     if top and len(counts) > top:

@@ -1,6 +1,7 @@
 #!/bin/bash
-# Stop hook: reads pending skill file, extracts token usage from transcript tail,
-# writes complete entry (with tokens) to skill-usage.jsonl, then cleans up.
+# Stop hook: reads pending skill file, extracts token usage + model from transcript tail,
+# computes duration from pending ts to now, writes a complete entry to skill-usage.jsonl,
+# then cleans up.
 
 INPUT=$(cat)
 
@@ -15,74 +16,112 @@ except:
 PENDING="$HOME/.claude/.skill-pending-${SESSION_ID}.jsonl"
 [ -f "$PENDING" ] || exit 0
 
-# Extract output_tokens from transcript tail for the current turn
-extract_tokens() {
-    local TRANSCRIPT_PATH="$1"
-    python3 -c "
-import json, sys
+LOG_FILE="$HOME/.claude/skill-usage.jsonl"
 
-try:
-    with open('$TRANSCRIPT_PATH') as f:
-        lines = f.readlines()
+python3 - "$PENDING" "$LOG_FILE" <<'PY'
+import json, os, sys
+from datetime import datetime, timezone
+
+pending_path, log_path = sys.argv[1], sys.argv[2]
+
+
+def extract_tokens_and_model(transcript_path):
+    tokens, model = 0, ""
+    if not transcript_path:
+        return tokens, model
+    try:
+        with open(transcript_path) as f:
+            lines = f.readlines()
+    except OSError:
+        return tokens, model
 
     tail = lines[-200:] if len(lines) > 200 else lines
     entries = []
     for l in tail:
         l = l.strip()
-        if l:
-            try:
-                entries.append(json.loads(l))
-            except:
-                pass
+        if not l:
+            continue
+        try:
+            entries.append(json.loads(l))
+        except json.JSONDecodeError:
+            pass
 
-    # Walk backwards to find turn boundary (last user text message)
+    # Walk backwards to find last user text message (turn boundary)
     turn_start = 0
     for i in range(len(entries) - 1, -1, -1):
         entry = entries[i]
-        if entry.get('type') == 'user':
-            content = entry.get('message', {}).get('content', [])
-            if any(isinstance(b, dict) and b.get('type') == 'text' for b in content):
+        if entry.get("type") == "user":
+            content = entry.get("message", {}).get("content", [])
+            if any(isinstance(b, dict) and b.get("type") == "text" for b in content):
                 turn_start = i
                 break
 
-    # Sum output_tokens from each unique API call in the turn
-    # Consecutive assistant entries = one API call, take first only
-    total = 0
+    # Sum output_tokens per API call (consecutive assistant entries = one call)
+    # Capture the first model seen in the turn
     i = turn_start
     while i < len(entries):
-        if entries[i].get('type') == 'assistant':
-            usage = entries[i].get('message', {}).get('usage', {})
-            total += usage.get('output_tokens', 0)
-            # Skip remaining consecutive assistant entries (same API call)
-            while i + 1 < len(entries) and entries[i + 1].get('type') == 'assistant':
+        if entries[i].get("type") == "assistant":
+            msg = entries[i].get("message", {})
+            tokens += msg.get("usage", {}).get("output_tokens", 0)
+            if not model:
+                model = msg.get("model", "") or model
+            while i + 1 < len(entries) and entries[i + 1].get("type") == "assistant":
                 i += 1
         i += 1
 
-    print(total)
-except:
-    print(0)
-" 2>/dev/null
-}
+    return tokens, model
 
-# Process each pending skill entry
-LOG_FILE="$HOME/.claude/skill-usage.jsonl"
 
-while IFS= read -r line; do
-    [ -z "$line" ] && continue
+def parse_ts(ts):
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
-    SKILL=$(echo "$line" | python3 -c "import sys,json;print(json.load(sys.stdin).get('skill',''))" 2>/dev/null)
-    SESSION=$(echo "$line" | python3 -c "import sys,json;print(json.load(sys.stdin).get('session',''))" 2>/dev/null)
-    TRANSCRIPT=$(echo "$line" | python3 -c "import sys,json;print(json.load(sys.stdin).get('transcript',''))" 2>/dev/null)
-    TS=$(echo "$line" | python3 -c "import sys,json;print(json.load(sys.stdin).get('ts',''))" 2>/dev/null)
-    SOURCE=$(echo "$line" | python3 -c "import sys,json;print(json.load(sys.stdin).get('source','claude'))" 2>/dev/null)
 
-    [ -z "$SKILL" ] && continue
+now = datetime.now(timezone.utc)
 
-    TOKENS=$(extract_tokens "$TRANSCRIPT")
-    [ -z "$TOKENS" ] && TOKENS=0
+try:
+    with open(pending_path) as f:
+        pending_lines = f.readlines()
+except OSError:
+    sys.exit(0)
 
-    echo "{\"skill\":\"$SKILL\",\"ts\":\"$TS\",\"session\":\"$SESSION\",\"source\":\"$SOURCE\",\"output_tokens\":$TOKENS}" >> "$LOG_FILE"
+with open(log_path, "a") as out:
+    for line in pending_lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            d = json.loads(line)
+        except json.JSONDecodeError:
+            continue
 
-done < "$PENDING"
+        skill = d.get("skill", "")
+        if not skill:
+            continue
 
-rm -f "$PENDING"
+        ts = d.get("ts", "")
+        start = parse_ts(ts)
+        duration_ms = int((now - start).total_seconds() * 1000) if start else 0
+
+        tokens, model = extract_tokens_and_model(d.get("transcript", ""))
+
+        entry = {
+            "skill": skill,
+            "ts": ts,
+            "session": d.get("session", ""),
+            "source": d.get("source", "claude"),
+            "model": model,
+            "duration_ms": duration_ms,
+            "output_tokens": tokens,
+        }
+        out.write(json.dumps(entry) + "\n")
+
+try:
+    os.remove(pending_path)
+except OSError:
+    pass
+PY

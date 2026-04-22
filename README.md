@@ -34,13 +34,13 @@ Track and analyze skill usage across sessions. Shows per-skill call counts and t
 ```
   Skill Usage Report (all time)
 
-   #  Skill                         Tokens  Calls
-   1  subagent-driven-development    10.0K      1
-   2  brainstorming                   8.2K      3
-   3  receiving-code-review           2.6K      1
-   4  profile-skills                  1.2K      3
+   #  Skill                         Tokens  Calls  AvgTime  Model
+   1  subagent-driven-development    10.0K      1    15.3s  opus-4-7
+   2  brainstorming                   8.2K      3     8.1s  opus-4-7
+   3  receiving-code-review           2.6K      1     4.2s  sonnet-4-6
+   4  profile-skills                  1.2K      3     0.5s  opus-4-7
 
-  Total: 22.0K tokens | 8 calls | 4 skills
+  Total: 22.0K tokens | 8 calls | 4 skills | 43.7s runtime
   Period: 2026-04-13 ~ 2026-04-14
 ```
 
@@ -49,7 +49,8 @@ Track and analyze skill usage across sessions. Shows per-skill call counts and t
 Opens an interactive HTML dashboard in the browser with:
 - **Skill Usage (Calls)** — horizontal bar chart sorted by call count
 - **Skill Usage (Tokens)** — horizontal bar chart sorted by token consumption
-- **Skill Descriptions** — table showing what each tracked skill does
+- **Skill Usage (Avg Duration)** — horizontal bar chart of average execution time per call
+- **Skill Descriptions** — table labeled as `skill-name (plugin-name)`, grouped by plugin
 
 ![Detail Report](docs/images/detail-report.png)
 
@@ -129,13 +130,13 @@ This plugin automatically tracks skill usage via three hooks registered in `plug
 |------|-------|------|
 | `track-skill-start.sh` | `PostToolUse` (Skill matcher) | Records pending entry for Claude-initiated skill calls |
 | `track-skill-prompt.sh` | `UserPromptSubmit` | Records pending entry for user-initiated `/skill-name` calls |
-| `track-skill-stop.sh` | `Stop` | Extracts `output_tokens` from transcript and writes final log entry |
+| `track-skill-stop.sh` | `Stop` | Extracts `output_tokens` + `model` from the transcript and computes `duration_ms` for the final log entry |
 
-Token data is tracked for both Claude-initiated and user-initiated skill calls. Usage data is logged to `~/.claude/skill-usage.jsonl`:
+Each entry captures token usage, the Claude model used, and the execution time for both Claude-initiated and user-initiated skill calls. Data is logged to `~/.claude/skill-usage.jsonl`:
 
 ```jsonl
-{"skill":"brainstorming","ts":"2026-04-10T02:19:18Z","session":"abc123","source":"claude","output_tokens":2566}
-{"skill":"list-skills","ts":"2026-04-10T03:00:00Z","session":"def456","source":"user","output_tokens":1234}
+{"skill":"brainstorming","ts":"2026-04-10T02:19:18Z","session":"abc123","source":"claude","model":"claude-opus-4-7-20251022","duration_ms":12400,"output_tokens":2566}
+{"skill":"list-skills","ts":"2026-04-10T03:00:00Z","session":"def456","source":"user","model":"claude-sonnet-4-6-20250929","duration_ms":2100,"output_tokens":1234}
 ```
 
 ## License
