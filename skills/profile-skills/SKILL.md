@@ -33,11 +33,15 @@ Examples:
 
 When `--detail` is used, the script opens a browser automatically. Print the URL from script output and tell the user to press Ctrl+C when done.
 
-## Token Tracking
+## Token / Model / Duration Tracking
 
-Token usage is captured in real-time by the `Stop` hook. When Claude finishes a response after a skill invocation, the hook reads the transcript tail to extract `output_tokens` and records them in the JSONL log.
+The `Stop` hook captures per-turn metrics after each skill invocation:
 
-- Both Claude-initiated (`source: "claude"`) and user-initiated (`source: "user"`) calls include `output_tokens` in the log
+- `output_tokens` — summed from assistant entries in the transcript tail
+- `model` — the Claude model ID used during the turn (from the transcript's assistant message)
+- `duration_ms` — elapsed milliseconds between the skill invocation (PostToolUse / UserPromptSubmit) and the `Stop` hook firing
+
+All three fields are recorded for both Claude-initiated (`source: "claude"`) and user-initiated (`source: "user"`) calls. The report aggregates average duration per call and the primary model used per skill.
 
 ## If No Data Found
 
@@ -53,10 +57,10 @@ Both hooks are bundled with this plugin and registered automatically via `plugin
 Each line in `skill-usage.jsonl` is a JSON object:
 
 ```jsonl
-{"skill":"brainstorming","ts":"2026-04-10T02:19:18Z","session":"abc123","source":"claude","output_tokens":2566}
-{"skill":"list-skills","ts":"2026-04-10T03:00:00Z","session":"def456","source":"user","output_tokens":1234}
+{"skill":"brainstorming","ts":"2026-04-10T02:19:18Z","session":"abc123","source":"claude","model":"claude-opus-4-7-20251022","duration_ms":12400,"output_tokens":2566}
+{"skill":"list-skills","ts":"2026-04-10T03:00:00Z","session":"def456","source":"user","model":"claude-sonnet-4-6-20250929","duration_ms":2100,"output_tokens":1234}
 ```
 
 - `source: "claude"` — Claude invoked the skill via the Skill tool
 - `source: "user"` — User typed `/skill-name` directly
-- Both sources include `output_tokens` extracted from the transcript by the `Stop` hook
+- `model`, `duration_ms`, `output_tokens` — captured by the `Stop` hook from the transcript tail and pending-entry timestamp
