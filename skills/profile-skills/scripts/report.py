@@ -135,7 +135,7 @@ def serve_html(html):
 
 def build_html(counts, skill_tokens, skill_duration, primary_model,
                skills_by_calls, skills_by_tokens, skills_by_duration,
-               skill_descs, period):
+               skill_info, period):
     labels = {"day": "last 24h", "week": "last 7 days", "month": "last 30 days"}
     period_label = labels.get(period, "all time")
 
@@ -191,16 +191,27 @@ def build_html(counts, skill_tokens, skill_duration, primary_model,
           <span class="bar-value">{fmt_duration(avg)}</span>
         </div>"""
 
-    # Build skill description table; include primary model column
-    all_skills = sorted(set(skills_by_calls) | set(skills_by_tokens) | set(skills_by_duration))
+    # Build skill description rows grouped by plugin.
+    # Display label: "skill-name (plugin-name)"; rows are ordered by plugin,
+    # then by skill name so that entries sharing a plugin sit together.
+    all_skills = set(skills_by_calls) | set(skills_by_tokens) | set(skills_by_duration)
+
+    def _sort_key(skill):
+        info = skill_info.get(skill, {}) if isinstance(skill_info, dict) else {}
+        plugins = info.get("plugins", []) or []
+        primary_plugin = plugins[0] if plugins else "~"  # untracked → bottom
+        return (primary_plugin, skill)
+
     desc_rows = ""
-    for skill in all_skills:
-        desc = _esc(skill_descs.get(skill, ""))
-        model = _esc(short_model(primary_model.get(skill, "")) or "-")
+    for skill in sorted(all_skills, key=_sort_key):
+        info = skill_info.get(skill, {}) if isinstance(skill_info, dict) else {}
+        desc = _esc(info.get("description", ""))
+        plugins = info.get("plugins", []) or []
+        plugin_label = ", ".join(plugins) if plugins else ""
+        label = f"{skill} ({plugin_label})" if plugin_label else skill
         desc_rows += f"""
         <tr>
-          <td class="desc-name">{_esc(skill)}</td>
-          <td class="desc-model">{model}</td>
+          <td class="desc-name">{_esc(label)}</td>
           <td class="desc-text">{desc}</td>
         </tr>"""
 
@@ -234,8 +245,7 @@ def build_html(counts, skill_tokens, skill_duration, primary_model,
   /* Skill descriptions */
   .desc-table {{ width: 100%; border-collapse: collapse; margin-top: 1rem; }}
   .desc-table td {{ padding: 0.5rem 0.75rem; border-bottom: 1px solid #2a2a3e; vertical-align: top; }}
-  .desc-name {{ width: 200px; font-weight: 600; color: #63b3ed; font-size: 0.85rem; white-space: nowrap; }}
-  .desc-model {{ width: 120px; color: #a78bfa; font-size: 0.8rem; font-family: monospace; white-space: nowrap; }}
+  .desc-name {{ width: 280px; font-weight: 600; color: #63b3ed; font-size: 0.85rem; white-space: nowrap; }}
   .desc-text {{ color: #aaa; font-size: 0.8rem; line-height: 1.4; }}
 </style>
 </head>
@@ -261,8 +271,12 @@ def build_html(counts, skill_tokens, skill_duration, primary_model,
     return html
 
 
-def _collect_skill_descs():
-    """Build {short_name: description} map from installed skills."""
+def _collect_skill_info():
+    """Build {short_name: {description, plugins}} map from installed skills.
+
+    A short name can exist in multiple plugins (e.g. duplicated across
+    personal + plugin installs), so plugins is a list.
+    """
     script_dir = Path(__file__).resolve().parent
     collect_script = script_dir / "../../list-skills/scripts/collect_skills.py"
     if not collect_script.exists():
@@ -271,7 +285,16 @@ def _collect_skill_descs():
     spec = importlib.util.spec_from_file_location("collect_skills", collect_script)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return {e["name"]: e.get("description", "") for e in mod.collect()}
+    info = {}
+    for e in mod.collect():
+        name = e["name"]
+        plugin = e.get("plugin", "")
+        slot = info.setdefault(name, {"description": e.get("description", ""), "plugins": []})
+        if plugin and plugin not in slot["plugins"]:
+            slot["plugins"].append(plugin)
+        if not slot["description"]:
+            slot["description"] = e.get("description", "")
+    return info
 
 
 def detail_report(period=None, top=None):
@@ -294,11 +317,11 @@ def detail_report(period=None, top=None):
         skills_by_tokens = skills_by_tokens[:top]
         skills_by_duration = skills_by_duration[:top]
 
-    skill_descs = _collect_skill_descs()
+    skill_info = _collect_skill_info()
 
     html = build_html(counts, skill_tokens, skill_duration, primary_model,
                       skills_by_calls, skills_by_tokens, skills_by_duration,
-                      skill_descs, period)
+                      skill_info, period)
     serve_html(html)
 
 
