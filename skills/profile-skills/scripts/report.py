@@ -87,16 +87,58 @@ def short_model(name):
     return "-".join(parts)
 
 
-def aggregate_per_skill(entries):
-    """Compute per-skill token totals, duration totals, and primary model."""
+def flatten_entries(entries):
+    """Yield each skill invocation (root or sub) as a flat dict carrying its
+    own-segment tokens / duration / model. Lets aggregation code stay agnostic
+    to the legacy flat schema vs. the nested one with `sub_skills`.
+    """
+    for e in entries:
+        yield {
+            "skill": e.get("skill", ""),
+            "ts": e.get("ts", ""),
+            "source": e.get("source", ""),
+            "model": e.get("model", ""),
+            "duration_ms": e.get("duration_ms", 0) or 0,
+            "output_tokens": e.get("output_tokens", 0) or 0,
+        }
+        for sub in e.get("sub_skills") or []:
+            yield {
+                "skill": sub.get("skill", ""),
+                "ts": sub.get("ts", ""),
+                "source": sub.get("source", ""),
+                "model": sub.get("model", ""),
+                "duration_ms": sub.get("duration_ms", 0) or 0,
+                "output_tokens": sub.get("output_tokens", 0) or 0,
+            }
+
+
+def aggregate_sub_calls(entries):
+    """Return {root_skill: Counter({sub_skill: tokens})} for entries that have
+    a `sub_skills` array. Used for the parenthetical breakdown next to a
+    parent skill's row."""
+    aggr = defaultdict(Counter)
+    for e in entries:
+        subs = e.get("sub_skills") or []
+        if not subs:
+            continue
+        root = normalize_skill(e.get("skill", ""))
+        for sub in subs:
+            name = normalize_skill(sub.get("skill", ""))
+            aggr[root][name] += sub.get("output_tokens", 0) or 0
+    return aggr
+
+
+def aggregate_per_skill(calls):
+    """Compute per-skill token totals, duration totals, and primary model from
+    flat call dicts (already non-overlapping own-segment values)."""
     skill_tokens = defaultdict(int)
     skill_duration = defaultdict(int)
     skill_models = defaultdict(Counter)
-    for e in entries:
-        s = normalize_skill(e["skill"])
-        skill_tokens[s] += e.get("output_tokens", 0) or 0
-        skill_duration[s] += e.get("duration_ms", 0) or 0
-        model = e.get("model", "") or ""
+    for c in calls:
+        s = normalize_skill(c["skill"])
+        skill_tokens[s] += c.get("output_tokens", 0) or 0
+        skill_duration[s] += c.get("duration_ms", 0) or 0
+        model = c.get("model", "") or ""
         if model:
             skill_models[s][model] += 1
     primary_model = {
@@ -104,6 +146,15 @@ def aggregate_per_skill(entries):
         for s, counter in skill_models.items()
     }
     return skill_tokens, skill_duration, primary_model
+
+
+def format_sub_breakdown(sub_counter):
+    """Render a Counter({sub: tokens}) as 'subA: 1.2K, subB: 300', sorted by
+    descending tokens. Returns '' if empty."""
+    if not sub_counter:
+        return ""
+    parts = [f"{name}: {fmt_tokens(tok)}" for name, tok in sub_counter.most_common()]
+    return ", ".join(parts)
 
 
 def serve_html(html):
@@ -135,7 +186,8 @@ def serve_html(html):
 
 def build_html(counts, skill_tokens, skill_duration, primary_model,
                skills_by_calls, skills_by_tokens, skills_by_duration,
-               skill_info, period):
+               skill_info, period, sub_aggr=None):
+    sub_aggr = sub_aggr or {}
     labels = {"day": "last 24h", "week": "last 7 days", "month": "last 30 days"}
     period_label = labels.get(period, "all time")
 
@@ -167,6 +219,8 @@ def build_html(counts, skill_tokens, skill_duration, primary_model,
     for skill in skills_by_tokens:
         t = skill_tokens.get(skill, 0)
         pct = (t / max_tokens) * 100
+        breakdown = format_sub_breakdown(sub_aggr.get(skill))
+        breakdown_html = f'<span class="bar-subs">({_esc(breakdown)})</span>' if breakdown else ""
         tokens_bars += f"""
         <div class="bar-row">
           <span class="bar-label">{_esc(skill)}</span>
@@ -174,6 +228,7 @@ def build_html(counts, skill_tokens, skill_duration, primary_model,
             <div class="bar bar-tokens" style="width:{pct:.1f}%"></div>
           </div>
           <span class="bar-value">{fmt_tokens(t)}</span>
+          {breakdown_html}
         </div>"""
 
     # Build duration bars (average per call)
@@ -241,6 +296,7 @@ def build_html(counts, skill_tokens, skill_duration, primary_model,
   .bar-tokens {{ background: linear-gradient(90deg, #f59e0b, #fbbf24); }}
   .bar-duration {{ background: linear-gradient(90deg, #10b981, #34d399); }}
   .bar-value {{ width: 70px; text-align: right; font-size: 0.85rem; padding-left: 8px; color: #aaa; }}
+  .bar-subs {{ padding-left: 10px; font-size: 0.75rem; color: #7a7a8a; white-space: nowrap; }}
 
   /* Skill descriptions */
   .desc-table {{ width: 100%; border-collapse: collapse; margin-top: 1rem; }}
@@ -303,8 +359,10 @@ def detail_report(period=None, top=None):
         print("No skill usage data found.")
         return
 
-    counts = Counter(normalize_skill(e["skill"]) for e in entries)
-    skill_tokens, skill_duration, primary_model = aggregate_per_skill(entries)
+    calls = list(flatten_entries(entries))
+    counts = Counter(normalize_skill(c["skill"]) for c in calls)
+    skill_tokens, skill_duration, primary_model = aggregate_per_skill(calls)
+    sub_aggr = aggregate_sub_calls(entries)
 
     skills_by_calls = sorted(counts.keys(), key=lambda s: -counts[s])
     skills_by_tokens = sorted(counts.keys(), key=lambda s: -skill_tokens.get(s, 0))
@@ -321,7 +379,7 @@ def detail_report(period=None, top=None):
 
     html = build_html(counts, skill_tokens, skill_duration, primary_model,
                       skills_by_calls, skills_by_tokens, skills_by_duration,
-                      skill_info, period)
+                      skill_info, period, sub_aggr)
     serve_html(html)
 
 
@@ -340,10 +398,12 @@ def report(period=None, top=None):
         print()
         return
 
-    counts = Counter(normalize_skill(e["skill"]) for e in entries)
+    calls = list(flatten_entries(entries))
+    counts = Counter(normalize_skill(c["skill"]) for c in calls)
     total_calls = sum(counts.values())
 
-    skill_tokens, skill_duration, primary_model = aggregate_per_skill(entries)
+    skill_tokens, skill_duration, primary_model = aggregate_per_skill(calls)
+    sub_aggr = aggregate_sub_calls(entries)
 
     # Sort by tokens desc; skills with no tokens go to the bottom
     skills_sorted = sorted(
@@ -382,9 +442,11 @@ def report(period=None, top=None):
         avg_dur = skill_duration.get(skill, 0) // counts[skill] if counts[skill] else 0
         dur_str = fmt_duration(avg_dur)
         model_str = short_model(primary_model.get(skill, "")) or "-"
+        breakdown = format_sub_breakdown(sub_aggr.get(skill))
+        breakdown_str = f"  ({breakdown})" if breakdown else ""
         print(
             f"  {rank:>2}  {skill:<{SKILL_W}}  {tok_str:>7}  "
-            f"{counts[skill]:>5}  {dur_str:>7}  {model_str:<{MODEL_W}}"
+            f"{counts[skill]:>5}  {dur_str:>7}  {model_str:<{MODEL_W}}{breakdown_str}"
         )
 
     print()
