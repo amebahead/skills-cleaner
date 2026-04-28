@@ -1,10 +1,11 @@
 #!/bin/bash
-# UserPromptSubmit hook: tracks skill usage when user types /skill-name directly
-# Receives JSON on stdin from Claude Code
+# UserPromptSubmit hook: tracks skill usage when user types /skill-name directly.
+# Before adding the new entry, flushes any pre-existing pending state — so
+# a previous turn's pending (if its Stop hook didn't fire reliably) is
+# emitted as its OWN log entry instead of being merged into this turn.
 
 INPUT=$(cat)
 
-# Extract user prompt - try common field names
 PROMPT=$(echo "$INPUT" | python3 -c "
 import sys, json
 try:
@@ -29,7 +30,6 @@ except:
     print('unknown')
 " 2>/dev/null)
 
-# Check if prompt starts with /skill-name pattern
 SKILL=$(echo "$PROMPT" | python3 -c "
 import sys, re
 line = sys.stdin.readline().strip()
@@ -40,8 +40,9 @@ else:
     print('')
 " 2>/dev/null)
 
-if [ -n "$SKILL" ]; then
-    TRANSCRIPT_PATH=$(echo "$INPUT" | python3 -c "
+[ -n "$SKILL" ] || exit 0
+
+TRANSCRIPT_PATH=$(echo "$INPUT" | python3 -c "
 import sys, json
 try:
     print(json.load(sys.stdin).get('transcript_path', ''))
@@ -49,7 +50,12 @@ except:
     print('')
 " 2>/dev/null)
 
-    PENDING="$HOME/.claude/.skill-pending-${SESSION_ID}.jsonl"
-    TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    echo "{\"skill\":\"$SKILL\",\"session\":\"$SESSION_ID\",\"transcript\":\"$TRANSCRIPT_PATH\",\"ts\":\"$TS\",\"source\":\"user\"}" >> "$PENDING"
-fi
+PENDING="$HOME/.claude/.skill-pending-${SESSION_ID}.jsonl"
+LOG_FILE="$HOME/.claude/skill-usage.jsonl"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Flush any leftover pending from a prior turn before recording this one.
+python3 "${SCRIPT_DIR}/_pending_flush.py" "$PENDING" "$LOG_FILE"
+
+TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+echo "{\"skill\":\"$SKILL\",\"session\":\"$SESSION_ID\",\"transcript\":\"$TRANSCRIPT_PATH\",\"ts\":\"$TS\",\"source\":\"user\"}" >> "$PENDING"
