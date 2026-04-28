@@ -57,5 +57,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Flush any leftover pending from a prior turn before recording this one.
 python3 "${SCRIPT_DIR}/_pending_flush.py" "$PENDING" "$LOG_FILE"
 
-TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+# Millisecond precision so this ts is reliably AFTER the transcript's user-text ts
+# (Claude Code stamps user-text with sub-second precision; second-truncated ts
+# made turn_window pick the wrong anchor and zeroed out tokens).
+TS=$(python3 -c "from datetime import datetime, timezone; n=datetime.now(timezone.utc); print(n.strftime('%Y-%m-%dT%H:%M:%S.')+f'{n.microsecond//1000:03d}Z')")
 echo "{\"skill\":\"$SKILL\",\"session\":\"$SESSION_ID\",\"transcript\":\"$TRANSCRIPT_PATH\",\"ts\":\"$TS\",\"source\":\"user\"}" >> "$PENDING"

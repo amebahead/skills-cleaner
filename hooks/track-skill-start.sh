@@ -23,7 +23,9 @@ except:
 if [ -n "$RESULT" ]; then
     SESSION=$(echo "$RESULT" | python3 -c "import sys,json;print(json.load(sys.stdin)['session'])" 2>/dev/null)
     PENDING="$HOME/.claude/.skill-pending-${SESSION}.jsonl"
-    TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    # Millisecond precision so segment boundaries match transcript-recorded
+    # assistant timestamps cleanly (avoids off-by-one segment attribution).
+    TS=$(python3 -c "from datetime import datetime, timezone; n=datetime.now(timezone.utc); print(n.strftime('%Y-%m-%dT%H:%M:%S.')+f'{n.microsecond//1000:03d}Z')")
     echo "{\"skill\":$(echo "$RESULT" | python3 -c "import sys,json;d=json.load(sys.stdin);print(json.dumps(d['skill']))" 2>/dev/null),\"session\":\"$SESSION\",\"transcript\":$(echo "$RESULT" | python3 -c "import sys,json;d=json.load(sys.stdin);print(json.dumps(d['transcript']))" 2>/dev/null),\"ts\":\"$TS\"}" >> "$PENDING"
 
     # Set terminal title
