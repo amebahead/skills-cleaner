@@ -122,6 +122,22 @@ Then presents similar pairs one at a time for interactive removal with a final c
 - **Personal skills**: Deletes the skill directory directly
 - **Plugin skills**: Never deletes directly — provides guidance on deactivation or removal
 
+## Recommended Permissions
+
+`/list-skills` and `/profile-skills` write their report to a temp file and read it back so the rendered table is shown directly in Claude's response (instead of a collapsed `+N lines` Bash panel). On `verbose=false` Claude Code asks for `Read` permission the first time it touches each path. To skip the prompt, add this rule to your `~/.claude/settings.json` (or a project `.claude/settings.json`):
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Read(/tmp/skills-cleaner-*.txt)"
+    ]
+  }
+}
+```
+
+A single glob covers both `list-skills` and `profile-skills`. Plugin-shipped permission allowlists aren't currently a supported Claude Code feature, so this rule has to live in user or project settings.
+
 ## Usage Tracking
 
 This plugin automatically tracks skill usage via three hooks registered in `plugin.json`:

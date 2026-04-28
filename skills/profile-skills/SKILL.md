@@ -44,10 +44,10 @@ How the report's table reaches the user depends on their Claude Code `verbose` s
 3. **If `verbose !== true`** (false or absent) — redirect stdout to a temp file so the Bash panel stays empty (no collapsed `+N lines` noise):
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/skills/profile-skills/scripts/report.py" [OPTIONS] > /tmp/profile-skills-output.txt
+   python3 "${CLAUDE_PLUGIN_ROOT}/skills/profile-skills/scripts/report.py" [OPTIONS] > /tmp/skills-cleaner-profile.txt
    ```
 
-   Then Read `/tmp/profile-skills-output.txt` and paste its contents **verbatim as a fenced code block**. This becomes the user's only visible output. Don't rephrase or reformat.
+   Then Read `/tmp/skills-cleaner-profile.txt` and paste its contents **verbatim as a fenced code block**. This becomes the user's only visible output. Don't rephrase or reformat.
 
    stderr is not redirected, so any script error stays visible in the Bash panel for debugging.
 
