@@ -38,14 +38,14 @@ How the table reaches the user depends on their `verbose` setting (in `~/.claude
 
    The Bash result panel shows the full table. Stay silent — do not re-paste, summarize, or reformat.
 
-3. **If `verbose !== true`** (false or absent) — redirect stdout to a temp file so the Bash panel stays empty (no collapsed `+N lines` noise):
+3. **If `verbose !== true`** (false or absent) — pass `--out` so the script writes the table itself (no shell redirect, so `Bash(python3:*)` matches cleanly and the Bash panel stays empty):
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/skills/list-skills/scripts/collect_skills.py" > /tmp/skills-cleaner-list.txt
+   python3 "${CLAUDE_PLUGIN_ROOT}/skills/list-skills/scripts/collect_skills.py" --out ~/.claude/.cache/skills-cleaner-list.txt
    ```
 
-   Then Read `/tmp/skills-cleaner-list.txt` and paste its contents **verbatim as a fenced code block**. This becomes the user's only visible output. Don't rephrase or reformat.
+   Then Read `~/.claude/.cache/skills-cleaner-list.txt` and paste its contents **verbatim as a fenced code block**. This becomes the user's only visible output. Don't rephrase or reformat.
 
-   stderr is not redirected, so any script error stays visible in the Bash panel for debugging.
+   The script creates the parent dir if missing. stderr is untouched, so any error stays visible in the Bash panel for debugging.
 
 Never add commentary before or after unless the user follows up.

@@ -41,17 +41,17 @@ How the report's table reaches the user depends on their Claude Code `verbose` s
 
    The Bash result panel shows the full table. Stay silent — do not re-paste, summarize, or reformat.
 
-3. **If `verbose !== true`** (false or absent) — redirect stdout to a temp file so the Bash panel stays empty (no collapsed `+N lines` noise):
+3. **If `verbose !== true`** (false or absent) — pass `--out` so the script writes the report itself (no shell redirect, so `Bash(python3:*)` matches cleanly and the Bash panel stays empty):
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/skills/profile-skills/scripts/report.py" [OPTIONS] > /tmp/skills-cleaner-profile.txt
+   python3 "${CLAUDE_PLUGIN_ROOT}/skills/profile-skills/scripts/report.py" [OPTIONS] --out ~/.claude/.cache/skills-cleaner-profile.txt
    ```
 
-   Then Read `/tmp/skills-cleaner-profile.txt` and paste its contents **verbatim as a fenced code block**. This becomes the user's only visible output. Don't rephrase or reformat.
+   Then Read `~/.claude/.cache/skills-cleaner-profile.txt` and paste its contents **verbatim as a fenced code block**. This becomes the user's only visible output. Don't rephrase or reformat.
 
-   stderr is not redirected, so any script error stays visible in the Bash panel for debugging.
+   The script creates the parent dir if missing. stderr is untouched, so any error stays visible in the Bash panel for debugging.
 
-The `--detail` flag is an exception: the script opens a browser and keeps a server alive, so do **not** redirect stdout. Run it directly regardless of `verbose`, then confirm the URL and that `Ctrl+C` stops it — no need to paste anything.
+The `--detail` flag is an exception: the script opens a browser and keeps a server alive, so do **not** pass `--out`. Run it directly regardless of `verbose`, then confirm the URL and that `Ctrl+C` stops it — no need to paste anything.
 
 Never add commentary before or after unless the user follows up.
 

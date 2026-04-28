@@ -130,13 +130,25 @@ def main():
         default="text",
         help="Output format (default: text)",
     )
+    parser.add_argument(
+        "--out", "-o",
+        help="Write output to this path instead of stdout (creates parent dirs).",
+    )
     args = parser.parse_args()
 
     entries = collect()
-    if args.format == "json":
-        print(json.dumps(entries, indent=2, ensure_ascii=False))
+    payload = (
+        json.dumps(entries, indent=2, ensure_ascii=False) + "\n"
+        if args.format == "json"
+        else format_text(entries)
+    )
+
+    if args.out:
+        out_path = Path(os.path.expanduser(args.out))
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(payload, encoding="utf-8")
     else:
-        print(format_text(entries), end="")
+        print(payload, end="")
 
 
 if __name__ == "__main__":

@@ -592,11 +592,28 @@ def main():
     )
     parser.add_argument("--top", "-t", type=int, default=None)
     parser.add_argument("--detail", "-d", action="store_true", help="Open HTML report in browser")
+    parser.add_argument(
+        "--out", "-o",
+        help="Write the text report to this path instead of stdout (creates parent dirs). Ignored with --detail.",
+    )
     args = parser.parse_args()
 
     period = args.period if args.period != "all" else None
     if args.detail:
         detail_report(period=period, top=args.top)
+        return
+
+    if args.out:
+        import sys
+        out_path = Path(os.path.expanduser(args.out))
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with out_path.open("w", encoding="utf-8") as fh:
+            saved_stdout = sys.stdout
+            sys.stdout = fh
+            try:
+                report(period=period, top=args.top)
+            finally:
+                sys.stdout = saved_stdout
     else:
         report(period=period, top=args.top)
 
