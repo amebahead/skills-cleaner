@@ -26,10 +26,26 @@ The default text output is already in the right shape (personal first, then plug
 
 ### Step 2: Display based on `verbose`
 
-How the table reaches the user depends on their `verbose` setting (in `~/.claude/settings.json`). Long Bash tool results are collapsed to "+N lines (ctrl+o to expand)" unless `verbose: true`, so the right move differs:
+How the table reaches the user depends on their `verbose` setting (in `~/.claude/settings.json`). Long Bash tool results are collapsed to "+N lines (ctrl+o to expand)" unless `verbose: true`, so the execution path differs:
 
 1. **Read `~/.claude/settings.json`** (or `~/.claude/settings.local.json` if it overrides) once before deciding.
-2. **If `verbose === true`** — the Bash result is shown in full. Just run the script and stay silent. Do not re-paste, summarize, or reformat.
-3. **If `verbose !== true`** (false or absent) — paste the script's stdout **verbatim as a fenced code block** so the user can read the whole table without expanding.
+
+2. **If `verbose === true`** — run the script directly:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/skills/list-skills/scripts/collect_skills.py"
+   ```
+
+   The Bash result panel shows the full table. Stay silent — do not re-paste, summarize, or reformat.
+
+3. **If `verbose !== true`** (false or absent) — redirect stdout to a temp file so the Bash panel stays empty (no collapsed `+N lines` noise):
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/skills/list-skills/scripts/collect_skills.py" > /tmp/list-skills-output.txt
+   ```
+
+   Then Read `/tmp/list-skills-output.txt` and paste its contents **verbatim as a fenced code block**. This becomes the user's only visible output. Don't rephrase or reformat.
+
+   stderr is not redirected, so any script error stays visible in the Bash panel for debugging.
 
 Never add commentary before or after unless the user follows up.
