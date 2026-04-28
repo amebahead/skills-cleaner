@@ -39,7 +39,8 @@ The `Stop` hook records one entry per turn after collecting all skill invocation
 
 For each skill (root or sub) the hook captures its **own segment**:
 
-- `output_tokens` — assistant message tokens whose timestamps fall between this skill's invocation and the next skill's invocation (or the turn's end). Tokens are non-overlapping, so summing across rows in a report gives the true total.
+- `output_tokens` — assistant output tokens whose timestamps fall between this skill's invocation and the next skill's invocation (or the turn's end). Non-overlapping, so summing across rows in a report gives the true total.
+- `input_tokens` / `cache_read_input_tokens` / `cache_creation_input_tokens` — input-side counters from the same `usage` block, summed per segment with the same boundaries. Cache-read and cache-write are kept separate because their effective pricing differs (read ~0.1×, write ~1.25×).
 - `model` — first model seen in the segment (typically the Claude model ID for the turn).
 - `duration_ms` — elapsed time from this skill's invocation to the next boundary (next sub-skill invocation, or `Stop` firing for the last segment).
 
@@ -59,13 +60,13 @@ Both hooks are bundled with this plugin and registered automatically via `plugin
 Each line in `skill-usage.jsonl` is one JSON object per turn. A turn with only one skill invocation produces a flat entry; a turn with sub-skills nests them under `sub_skills`.
 
 ```jsonl
-{"skill":"list-skills","ts":"2026-04-10T03:00:00Z","session":"def456","source":"user","model":"claude-sonnet-4-6-20250929","duration_ms":2100,"output_tokens":1234}
-{"skill":"skill-creator:skill-creator","ts":"2026-04-27T10:00:00Z","session":"abc","source":"user","model":"claude-opus-4-7","duration_ms":12000,"output_tokens":4000,"sub_skills":[{"skill":"superpowers:brainstorming","ts":"2026-04-27T10:01:00Z","source":"claude","model":"claude-opus-4-7","duration_ms":10000,"output_tokens":800},{"skill":"superpowers:writing-plans","ts":"2026-04-27T10:02:00Z","source":"claude","model":"claude-opus-4-7","duration_ms":5000,"output_tokens":500}]}
+{"skill":"list-skills","ts":"2026-04-10T03:00:00Z","session":"def456","source":"user","model":"claude-sonnet-4-6","duration_ms":2100,"input_tokens":4,"cache_creation_input_tokens":0,"cache_read_input_tokens":21000,"output_tokens":1234}
+{"skill":"skill-creator:skill-creator","ts":"2026-04-27T10:00:00Z","session":"abc","source":"user","model":"claude-opus-4-7","duration_ms":12000,"input_tokens":12,"cache_creation_input_tokens":26000,"cache_read_input_tokens":16700,"output_tokens":4000,"sub_skills":[{"skill":"superpowers:brainstorming","ts":"2026-04-27T10:01:00Z","source":"claude","model":"claude-opus-4-7","duration_ms":10000,"input_tokens":3,"cache_creation_input_tokens":500,"cache_read_input_tokens":40000,"output_tokens":800}]}
 ```
 
 - `source: "claude"` — Claude invoked the skill via the Skill tool
 - `source: "user"` — User typed `/skill-name` directly
-- `output_tokens` / `duration_ms` — own-segment value, not inclusive of sub-skills (sum the row + `sub_skills[*]` to get the turn total)
-- `sub_skills` — present only when more than one skill fired in the turn; ordered by invocation time
+- All token / duration fields are own-segment values, not inclusive of sub-skills (sum the row + `sub_skills[*]` to get the turn total).
+- `sub_skills` — present only when more than one skill fired in the turn; ordered by invocation time.
 
-Older log lines written before nested support (no `sub_skills` field even when multiple skills shared a turn) are still readable; the report treats them as flat single-skill entries.
+Older log lines without `sub_skills` or input-side fields are still readable; the report treats missing token fields as zero (rendered as `-`).

@@ -35,10 +35,15 @@ def parse_ts(ts):
         return None
 
 
+TOKEN_FIELDS = ("input_tokens", "cache_creation_input_tokens",
+                "cache_read_input_tokens", "output_tokens")
+
+
 def collect_turn_assistants(transcript_path):
-    """Return ordered list of (timestamp, output_tokens, model) for assistant
-    entries in the most recent turn (everything after the last user-text
-    message). Reads the whole transcript so the turn boundary is always found.
+    """Return ordered list of dicts with `ts`, `model`, and the four token
+    counters (input / cache_creation / cache_read / output) for each assistant
+    entry in the most recent turn — everything after the last user-text
+    message. Reads the whole transcript so the turn boundary is always found.
     """
     if not transcript_path:
         return []
@@ -71,11 +76,15 @@ def collect_turn_assistants(transcript_path):
     for e in entries[turn_start:]:
         if e.get("type") != "assistant":
             continue
-        ts = parse_ts(e.get("timestamp", ""))
         msg = e.get("message", {})
-        tokens = msg.get("usage", {}).get("output_tokens", 0) or 0
-        model = msg.get("model", "") or ""
-        out.append((ts, tokens, model))
+        usage = msg.get("usage", {}) or {}
+        rec = {
+            "ts": parse_ts(e.get("timestamp", "")),
+            "model": msg.get("model", "") or "",
+        }
+        for f in TOKEN_FIELDS:
+            rec[f] = usage.get(f, 0) or 0
+        out.append(rec)
     return out
 
 
@@ -127,15 +136,23 @@ assistants = collect_turn_assistants(transcript_path)
 
 boundaries = [parse_ts(p.get("ts", "")) for p in pending]
 
-segments = [{"tokens": 0, "model": ""} for _ in pending]
-for ts, tokens, model in assistants:
-    if ts is None:
+def _empty_seg():
+    s = {"model": ""}
+    for f in TOKEN_FIELDS:
+        s[f] = 0
+    return s
+
+
+segments = [_empty_seg() for _ in pending]
+for a in assistants:
+    if a["ts"] is None:
         continue
-    idx = find_segment_idx(ts, boundaries)
+    idx = find_segment_idx(a["ts"], boundaries)
     seg = segments[idx]
-    seg["tokens"] += tokens
-    if model and not seg["model"]:
-        seg["model"] = model
+    for f in TOKEN_FIELDS:
+        seg[f] += a[f]
+    if a["model"] and not seg["model"]:
+        seg["model"] = a["model"]
 
 
 def segment_duration_ms(i):
@@ -148,28 +165,31 @@ def segment_duration_ms(i):
     return max(0, int((end - start).total_seconds() * 1000))
 
 
+def _segment_record(i, base):
+    rec = dict(base)
+    rec["model"] = segments[i]["model"]
+    rec["duration_ms"] = segment_duration_ms(i)
+    for f in TOKEN_FIELDS:
+        rec[f] = segments[i][f]
+    return rec
+
+
 root = pending[0]
-entry = {
+entry = _segment_record(0, {
     "skill": root.get("skill", ""),
     "ts": root.get("ts", ""),
     "session": root.get("session", ""),
     "source": root.get("source", "claude"),
-    "model": segments[0]["model"],
-    "duration_ms": segment_duration_ms(0),
-    "output_tokens": segments[0]["tokens"],
-}
+})
 
 if len(pending) > 1:
     sub_skills = []
     for i in range(1, len(pending)):
-        sub_skills.append({
+        sub_skills.append(_segment_record(i, {
             "skill": pending[i].get("skill", ""),
             "ts": pending[i].get("ts", ""),
             "source": pending[i].get("source", "claude"),
-            "model": segments[i]["model"],
-            "duration_ms": segment_duration_ms(i),
-            "output_tokens": segments[i]["tokens"],
-        })
+        }))
     entry["sub_skills"] = sub_skills
 
 with open(log_path, "a") as out:

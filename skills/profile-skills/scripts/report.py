@@ -13,6 +13,13 @@ from pathlib import Path
 
 LOG_FILE = os.path.expanduser("~/.claude/skill-usage.jsonl")
 
+TOKEN_FIELDS = (
+    "input_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+    "output_tokens",
+)
+
 
 def load_entries(period=None):
     if not os.path.exists(LOG_FILE):
@@ -87,29 +94,28 @@ def short_model(name):
     return "-".join(parts)
 
 
+def _call_record(src):
+    rec = {
+        "skill": src.get("skill", ""),
+        "ts": src.get("ts", ""),
+        "source": src.get("source", ""),
+        "model": src.get("model", ""),
+        "duration_ms": src.get("duration_ms", 0) or 0,
+    }
+    for f in TOKEN_FIELDS:
+        rec[f] = src.get(f, 0) or 0
+    return rec
+
+
 def flatten_entries(entries):
     """Yield each skill invocation (root or sub) as a flat dict carrying its
     own-segment tokens / duration / model. Lets aggregation code stay agnostic
     to the legacy flat schema vs. the nested one with `sub_skills`.
     """
     for e in entries:
-        yield {
-            "skill": e.get("skill", ""),
-            "ts": e.get("ts", ""),
-            "source": e.get("source", ""),
-            "model": e.get("model", ""),
-            "duration_ms": e.get("duration_ms", 0) or 0,
-            "output_tokens": e.get("output_tokens", 0) or 0,
-        }
+        yield _call_record(e)
         for sub in e.get("sub_skills") or []:
-            yield {
-                "skill": sub.get("skill", ""),
-                "ts": sub.get("ts", ""),
-                "source": sub.get("source", ""),
-                "model": sub.get("model", ""),
-                "duration_ms": sub.get("duration_ms", 0) or 0,
-                "output_tokens": sub.get("output_tokens", 0) or 0,
-            }
+            yield _call_record(sub)
 
 
 def aggregate_sub_calls(entries):
@@ -129,14 +135,22 @@ def aggregate_sub_calls(entries):
 
 
 def aggregate_per_skill(calls):
-    """Compute per-skill token totals, duration totals, and primary model from
-    flat call dicts (already non-overlapping own-segment values)."""
-    skill_tokens = defaultdict(int)
+    """Compute per-skill token totals (per token type), duration totals, and
+    primary model from flat call dicts (already non-overlapping own-segment
+    values).
+
+    Returns:
+        skill_tokens: {skill: {token_field: total}} for every TOKEN_FIELDS key
+        skill_duration: {skill: total_ms}
+        primary_model: {skill: most-frequent model id}
+    """
+    skill_tokens = defaultdict(lambda: {f: 0 for f in TOKEN_FIELDS})
     skill_duration = defaultdict(int)
     skill_models = defaultdict(Counter)
     for c in calls:
         s = normalize_skill(c["skill"])
-        skill_tokens[s] += c.get("output_tokens", 0) or 0
+        for f in TOKEN_FIELDS:
+            skill_tokens[s][f] += c.get(f, 0) or 0
         skill_duration[s] += c.get("duration_ms", 0) or 0
         model = c.get("model", "") or ""
         if model:
@@ -146,6 +160,11 @@ def aggregate_per_skill(calls):
         for s, counter in skill_models.items()
     }
     return skill_tokens, skill_duration, primary_model
+
+
+def get_tok(skill_tokens, skill, field):
+    """Safe accessor for the dict-of-dicts skill_tokens map."""
+    return skill_tokens.get(skill, {}).get(field, 0) if skill_tokens else 0
 
 
 def format_sub_breakdown(sub_counter):
@@ -186,14 +205,21 @@ def serve_html(html):
 
 def build_html(counts, skill_tokens, skill_duration, primary_model,
                skills_by_calls, skills_by_tokens, skills_by_duration,
-               skill_info, period, sub_aggr=None):
+               skill_info, period, sub_aggr=None, skills_by_input=None):
     sub_aggr = sub_aggr or {}
+    skills_by_input = skills_by_input or []
     labels = {"day": "last 24h", "week": "last 7 days", "month": "last 30 days"}
     period_label = labels.get(period, "all time")
 
+    def _input_total(s):
+        return (get_tok(skill_tokens, s, "input_tokens")
+                + get_tok(skill_tokens, s, "cache_read_input_tokens")
+                + get_tok(skill_tokens, s, "cache_creation_input_tokens"))
+
     max_calls = max(counts[s] for s in skills_by_calls) if skills_by_calls else 1
-    max_tokens = max(skill_tokens.get(s, 0) for s in skills_by_tokens) if skills_by_tokens else 1
+    max_tokens = max(get_tok(skill_tokens, s, "output_tokens") for s in skills_by_tokens) if skills_by_tokens else 1
     max_tokens = max_tokens or 1
+    max_input = max((_input_total(s) for s in skills_by_input), default=1) or 1
     max_duration = max(
         (skill_duration.get(s, 0) // counts[s] if counts[s] else 0)
         for s in skills_by_duration
@@ -214,10 +240,10 @@ def build_html(counts, skill_tokens, skill_duration, primary_model,
           <span class="bar-value">{c}</span>
         </div>"""
 
-    # Build tokens bars HTML
+    # Build output-tokens bars (highlighted as the primary cost view)
     tokens_bars = ""
     for skill in skills_by_tokens:
-        t = skill_tokens.get(skill, 0)
+        t = get_tok(skill_tokens, skill, "output_tokens")
         pct = (t / max_tokens) * 100
         breakdown = format_sub_breakdown(sub_aggr.get(skill))
         breakdown_html = f'<span class="bar-subs">({_esc(breakdown)})</span>' if breakdown else ""
@@ -228,6 +254,37 @@ def build_html(counts, skill_tokens, skill_duration, primary_model,
             <div class="bar bar-tokens" style="width:{pct:.1f}%"></div>
           </div>
           <span class="bar-value">{fmt_tokens(t)}</span>
+          {breakdown_html}
+        </div>"""
+
+    # Build input-tokens bars: total = fresh input + cache read + cache write.
+    # Rendered with a softer palette so the Output and Calls views remain the
+    # most visually prominent.
+    input_bars = ""
+    for skill in skills_by_input:
+        in_tok = get_tok(skill_tokens, skill, "input_tokens")
+        cr_tok = get_tok(skill_tokens, skill, "cache_read_input_tokens")
+        cw_tok = get_tok(skill_tokens, skill, "cache_creation_input_tokens")
+        total = in_tok + cr_tok + cw_tok
+        pct = (total / max_input) * 100 if max_input else 0
+        parts = []
+        if in_tok:
+            parts.append(f"in {fmt_tokens(in_tok)}")
+        if cr_tok:
+            parts.append(f"cacheR {fmt_tokens(cr_tok)}")
+        if cw_tok:
+            parts.append(f"cacheW {fmt_tokens(cw_tok)}")
+        breakdown_html = (
+            f'<span class="bar-subs">({_esc(", ".join(parts))})</span>'
+            if parts else ""
+        )
+        input_bars += f"""
+        <div class="bar-row">
+          <span class="bar-label">{_esc(skill)}</span>
+          <div class="bar-track">
+            <div class="bar bar-input" style="width:{pct:.1f}%"></div>
+          </div>
+          <span class="bar-value">{fmt_tokens(total)}</span>
           {breakdown_html}
         </div>"""
 
@@ -295,6 +352,9 @@ def build_html(counts, skill_tokens, skill_duration, primary_model,
   .bar-calls {{ background: linear-gradient(90deg, #3b82f6, #60a5fa); }}
   .bar-tokens {{ background: linear-gradient(90deg, #f59e0b, #fbbf24); }}
   .bar-duration {{ background: linear-gradient(90deg, #10b981, #34d399); }}
+  /* Input bar uses a muted tone so Calls + Out bars (the primary signals)
+     stay visually dominant. */
+  .bar-input {{ background: linear-gradient(90deg, #4a5568, #718096); }}
   .bar-value {{ width: 70px; text-align: right; font-size: 0.85rem; padding-left: 8px; color: #aaa; }}
   .bar-subs {{ padding-left: 10px; font-size: 0.75rem; color: #7a7a8a; white-space: nowrap; }}
 
@@ -312,8 +372,12 @@ def build_html(counts, skill_tokens, skill_duration, primary_model,
   <h2>Skill Usage (Calls)</h2>
   {calls_bars}
 
-  <h2>Skill Usage (Tokens)</h2>
+  <h2>Skill Usage (Output Tokens)</h2>
   {tokens_bars}
+
+  <h2>Skill Usage (Input Tokens)</h2>
+  <div class="subtitle">fresh input + cache read + cache write</div>
+  {input_bars}
 
   <h2>Skill Usage (Avg Duration)</h2>
   {duration_bars}
@@ -364,8 +428,14 @@ def detail_report(period=None, top=None):
     skill_tokens, skill_duration, primary_model = aggregate_per_skill(calls)
     sub_aggr = aggregate_sub_calls(entries)
 
+    def _input_total(s):
+        return (get_tok(skill_tokens, s, "input_tokens")
+                + get_tok(skill_tokens, s, "cache_read_input_tokens")
+                + get_tok(skill_tokens, s, "cache_creation_input_tokens"))
+
     skills_by_calls = sorted(counts.keys(), key=lambda s: -counts[s])
-    skills_by_tokens = sorted(counts.keys(), key=lambda s: -skill_tokens.get(s, 0))
+    skills_by_tokens = sorted(counts.keys(), key=lambda s: -get_tok(skill_tokens, s, "output_tokens"))
+    skills_by_input = sorted(counts.keys(), key=lambda s: -_input_total(s))
     skills_by_duration = sorted(
         counts.keys(),
         key=lambda s: -(skill_duration.get(s, 0) // counts[s] if counts[s] else 0),
@@ -373,13 +443,14 @@ def detail_report(period=None, top=None):
     if top:
         skills_by_calls = skills_by_calls[:top]
         skills_by_tokens = skills_by_tokens[:top]
+        skills_by_input = skills_by_input[:top]
         skills_by_duration = skills_by_duration[:top]
 
     skill_info = _collect_skill_info()
 
     html = build_html(counts, skill_tokens, skill_duration, primary_model,
                       skills_by_calls, skills_by_tokens, skills_by_duration,
-                      skill_info, period, sub_aggr)
+                      skill_info, period, sub_aggr, skills_by_input)
     serve_html(html)
 
 
@@ -405,53 +476,86 @@ def report(period=None, top=None):
     skill_tokens, skill_duration, primary_model = aggregate_per_skill(calls)
     sub_aggr = aggregate_sub_calls(entries)
 
-    # Sort by tokens desc; skills with no tokens go to the bottom
+    # Sort by output tokens desc; skills with zero output go to the bottom.
     skills_sorted = sorted(
         counts.keys(),
-        key=lambda s: (skill_tokens.get(s, 0) == 0, -skill_tokens.get(s, 0)),
+        key=lambda s: (
+            get_tok(skill_tokens, s, "output_tokens") == 0,
+            -get_tok(skill_tokens, s, "output_tokens"),
+        ),
     )
     if top:
         skills_sorted = skills_sorted[:top]
 
-    total_tokens = sum(skill_tokens.values())
+    total_out = sum(get_tok(skill_tokens, s, "output_tokens") for s in counts)
+    total_in = sum(get_tok(skill_tokens, s, "input_tokens") for s in counts)
+    total_cr = sum(get_tok(skill_tokens, s, "cache_read_input_tokens") for s in counts)
+    total_cc = sum(get_tok(skill_tokens, s, "cache_creation_input_tokens") for s in counts)
     total_duration = sum(skill_duration.values())
 
-    # Period label
     labels = {"day": "last 24h", "week": "last 7 days", "month": "last 30 days"}
     period_label = labels.get(period, "all time")
 
-    # Dynamic skill column width based on longest name
-    SKILL_W = max(len(s) for s in skills_sorted) if skills_sorted else 5
-    SKILL_W = max(SKILL_W, 5)  # minimum width for "Skill" header
-
+    SKILL_W = max((len(s) for s in skills_sorted), default=5)
+    SKILL_W = max(SKILL_W, 5)
     models_shown = [short_model(primary_model.get(s, "")) for s in skills_sorted]
     MODEL_W = max((len(m) for m in models_shown if m), default=5)
-    MODEL_W = max(MODEL_W, 5)  # minimum width for "Model" header
+    MODEL_W = max(MODEL_W, 5)
+
+    # Column widths for the four token columns + Calls. Output and Calls are
+    # the values most users skim for, so they're highlighted with color.
+    IN_W, CR_W, CW_W, OUT_W, CALLS_W = 5, 7, 7, 7, 5
+
+    def _fmt_tok_or_dash(n):
+        return fmt_tokens(n) if n else "-"
+
+    def _pad(text, width, align=">"):
+        return f"{text:>{width}}" if align == ">" else f"{text:<{width}}"
 
     print()
     print(f"  Skill Usage Report ({period_label})")
     print()
-    header = (
-        f"  {'#':>2}  {'Skill':<{SKILL_W}}  {'Tokens':>7}  "
-        f"{'Calls':>5}  {'AvgTime':>7}  {'Model':<{MODEL_W}}"
-    )
-    print(header)
+    header_cells = [
+        "  " + _pad("#", 2),
+        _pad("Skill", SKILL_W, "<"),
+        _pad("In", IN_W),
+        _pad("CacheR", CR_W),
+        _pad("CacheW", CW_W),
+        _pad("Out", OUT_W),
+        _pad("Calls", CALLS_W),
+        _pad("AvgTime", 7),
+        _pad("Model", MODEL_W, "<"),
+    ]
+    print("  ".join(header_cells))
     for rank, skill in enumerate(skills_sorted, 1):
-        tok = skill_tokens.get(skill, 0)
-        tok_str = fmt_tokens(tok) if tok else "-"
+        in_tok = get_tok(skill_tokens, skill, "input_tokens")
+        cr_tok = get_tok(skill_tokens, skill, "cache_read_input_tokens")
+        cw_tok = get_tok(skill_tokens, skill, "cache_creation_input_tokens")
+        out_tok = get_tok(skill_tokens, skill, "output_tokens")
         avg_dur = skill_duration.get(skill, 0) // counts[skill] if counts[skill] else 0
-        dur_str = fmt_duration(avg_dur)
         model_str = short_model(primary_model.get(skill, "")) or "-"
         breakdown = format_sub_breakdown(sub_aggr.get(skill))
         breakdown_str = f"  ({breakdown})" if breakdown else ""
-        print(
-            f"  {rank:>2}  {skill:<{SKILL_W}}  {tok_str:>7}  "
-            f"{counts[skill]:>5}  {dur_str:>7}  {model_str:<{MODEL_W}}{breakdown_str}"
-        )
+
+        cells = [
+            "  " + _pad(str(rank), 2),
+            _pad(skill, SKILL_W, "<"),
+            _pad(_fmt_tok_or_dash(in_tok), IN_W),
+            _pad(_fmt_tok_or_dash(cr_tok), CR_W),
+            _pad(_fmt_tok_or_dash(cw_tok), CW_W),
+            _pad(_fmt_tok_or_dash(out_tok), OUT_W),
+            _pad(str(counts[skill]), CALLS_W),
+            _pad(fmt_duration(avg_dur), 7),
+            _pad(model_str, MODEL_W, "<"),
+        ]
+        print("  ".join(cells) + breakdown_str)
 
     print()
     summary = (
-        f"  Total: {fmt_tokens(total_tokens)} tokens | {total_calls} calls | "
+        f"  Total: {fmt_tokens(total_out)} out · "
+        f"{fmt_tokens(total_in)} in / {fmt_tokens(total_cr)} cacheR / "
+        f"{fmt_tokens(total_cc)} cacheW | "
+        f"{total_calls} calls | "
         f"{len(counts)} skills | {fmt_duration(total_duration)} runtime"
     )
     print(summary)
