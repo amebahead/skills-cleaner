@@ -29,15 +29,31 @@ Examples:
 
 ## Output Rules
 
-How the report's table reaches the user depends on their Claude Code `verbose` setting (in `~/.claude/settings.json`). Long Bash tool results are collapsed to "+N lines (ctrl+o to expand)" unless `verbose: true`, so the right move differs:
+How the report's table reaches the user depends on their Claude Code `verbose` setting (in `~/.claude/settings.json`). Long Bash tool results are collapsed to "+N lines (ctrl+o to expand)" unless `verbose: true`, so the execution path differs:
 
 1. **Read `~/.claude/settings.json`** (or `~/.claude/settings.local.json` if it overrides) once before deciding.
-2. **If `verbose === true`** — the Bash result is shown in full. Just run the script and stay silent. Do not re-paste, summarize, or reformat; any text would just duplicate what the user already sees.
-3. **If `verbose !== true`** (false or absent) — the Bash result is truncated in the UI. Paste the script's stdout **verbatim as a fenced code block** so the user can read the whole table without expanding. Don't rephrase or reformat — the script already produced a well-aligned table.
+
+2. **If `verbose === true`** — run the script directly:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/skills/profile-skills/scripts/report.py" [OPTIONS]
+   ```
+
+   The Bash result panel shows the full table. Stay silent — do not re-paste, summarize, or reformat.
+
+3. **If `verbose !== true`** (false or absent) — redirect stdout to a temp file so the Bash panel stays empty (no collapsed `+N lines` noise):
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/skills/profile-skills/scripts/report.py" [OPTIONS] > /tmp/profile-skills-output.txt
+   ```
+
+   Then Read `/tmp/profile-skills-output.txt` and paste its contents **verbatim as a fenced code block**. This becomes the user's only visible output. Don't rephrase or reformat.
+
+   stderr is not redirected, so any script error stays visible in the Bash panel for debugging.
 
 In either case, never add commentary before or after unless the user follows up.
 
-When `--detail` is used, the script opens a browser automatically and keeps a server alive. After launching, just confirm the URL and that `Ctrl+C` stops it — no need to paste the report itself.
+The `--detail` flag is an exception: the script opens a browser and keeps a server alive, so do **not** redirect stdout. Run it directly regardless of `verbose`, then confirm the URL and that `Ctrl+C` stops it — no need to paste anything.
 
 ## Token / Model / Duration Tracking
 
