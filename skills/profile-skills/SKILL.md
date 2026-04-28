@@ -29,9 +29,15 @@ Examples:
 
 ## Output Rules
 
-**ALWAYS paste the script's terminal output verbatim as a fenced code block.** Do not summarize, rephrase, or reformat the table into prose. The script already produces a well-formatted table — show it exactly as printed. No additional commentary is needed before or after the table unless the user asks a follow-up question.
+How the report's table reaches the user depends on their Claude Code `verbose` setting (in `~/.claude/settings.json`). Long Bash tool results are collapsed to "+N lines (ctrl+o to expand)" unless `verbose: true`, so the right move differs:
 
-When `--detail` is used, the script opens a browser automatically. Print the URL from script output and tell the user to press Ctrl+C when done.
+1. **Read `~/.claude/settings.json`** (or `~/.claude/settings.local.json` if it overrides) once before deciding.
+2. **If `verbose === true`** — the Bash result is shown in full. Just run the script and stay silent. Do not re-paste, summarize, or reformat; any text would just duplicate what the user already sees.
+3. **If `verbose !== true`** (false or absent) — the Bash result is truncated in the UI. Paste the script's stdout **verbatim as a fenced code block** so the user can read the whole table without expanding. Don't rephrase or reformat — the script already produced a well-aligned table.
+
+In either case, never add commentary before or after unless the user follows up.
+
+When `--detail` is used, the script opens a browser automatically and keeps a server alive. After launching, just confirm the URL and that `Ctrl+C` stops it — no need to paste the report itself.
 
 ## Token / Model / Duration Tracking
 
