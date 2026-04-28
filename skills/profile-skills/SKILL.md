@@ -51,9 +51,9 @@ How the report's table reaches the user depends on their Claude Code `verbose` s
 
    stderr is not redirected, so any script error stays visible in the Bash panel for debugging.
 
-In either case, never add commentary before or after unless the user follows up.
-
 The `--detail` flag is an exception: the script opens a browser and keeps a server alive, so do **not** redirect stdout. Run it directly regardless of `verbose`, then confirm the URL and that `Ctrl+C` stops it — no need to paste anything.
+
+Never add commentary before or after unless the user follows up.
 
 ## Token / Model / Duration Tracking
 
