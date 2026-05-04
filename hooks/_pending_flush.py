@@ -66,7 +66,18 @@ def read_jsonl(path):
 def collect_assistants(transcript_path):
     """Read the transcript and return all assistant entries in order with
     their parsed timestamp, model, and four token counters. The caller
-    slices this list by group boundaries."""
+    slices this list by group boundaries.
+
+    Streaming-chunk dedup: Claude Code transcripts emit one entry per
+    streamed content block, all sharing the same ``message.id`` and
+    repeating the FINAL ``usage`` totals on each chunk. We keep only the
+    first occurrence per id so token counters aren't multiplied by chunk
+    count.
+
+    Tool-injected user entries (Skill output, etc.) are skipped from the
+    user-text turn-boundary list. They're identified by ``isMeta`` or
+    ``sourceToolUseID`` — without this, a Skill tool result looks like a
+    new user prompt and incorrectly truncates the turn window."""
     if not transcript_path:
         return [], []
     entries = read_jsonl(transcript_path)
@@ -76,17 +87,30 @@ def collect_assistants(transcript_path):
     for i, e in enumerate(entries):
         if e.get("type") != "user":
             continue
-        content = e.get("message", {}).get("content", [])
-        if isinstance(content, list) and any(
+        # Tool-injected entries (e.g. Skill output) carry these markers;
+        # they aren't real user prompts and must not start a new turn.
+        if e.get("isMeta") or e.get("sourceToolUseID"):
+            continue
+        content = e.get("message", {}).get("content", "")
+        if isinstance(content, str):
+            if content.strip():
+                user_text_idx.append(i)
+        elif isinstance(content, list) and any(
             isinstance(b, dict) and b.get("type") == "text" for b in content
         ):
             user_text_idx.append(i)
 
     assistants = []
+    seen_msg_ids = set()
     for i, e in enumerate(entries):
         if e.get("type") != "assistant":
             continue
         msg = e.get("message", {}) or {}
+        msg_id = msg.get("id") or ""
+        if msg_id and msg_id in seen_msg_ids:
+            continue
+        if msg_id:
+            seen_msg_ids.add(msg_id)
         usage = msg.get("usage", {}) or {}
         rec = {
             "idx": i,
