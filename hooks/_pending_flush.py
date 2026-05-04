@@ -63,10 +63,10 @@ def read_jsonl(path):
     return out
 
 
-def collect_assistants(transcript_path):
-    """Read the transcript and return all assistant entries in order with
-    their parsed timestamp, model, and four token counters. The caller
-    slices this list by group boundaries.
+def collect_assistants(entries):
+    """Return assistant entries (with parsed ts, model, token counters)
+    and the user-text index list for turn boundaries, derived from
+    already-loaded transcript entries.
 
     Streaming-chunk dedup: Claude Code transcripts emit one entry per
     streamed content block, all sharing the same ``message.id`` and
@@ -78,23 +78,16 @@ def collect_assistants(transcript_path):
     user-text turn-boundary list. They're identified by ``isMeta`` or
     ``sourceToolUseID`` — without this, a Skill tool result looks like a
     new user prompt and incorrectly truncates the turn window."""
-    if not transcript_path:
-        return [], []
-    entries = read_jsonl(transcript_path)
-
     # Indices of user-text messages — used to bound a group to its turn.
     user_text_idx = []
     for i, e in enumerate(entries):
         if e.get("type") != "user":
             continue
-        # Tool-injected entries (e.g. Skill output) carry these markers;
-        # they aren't real user prompts and must not start a new turn.
         if e.get("isMeta") or e.get("sourceToolUseID"):
             continue
         content = e.get("message", {}).get("content", "")
-        if isinstance(content, str):
-            if content.strip():
-                user_text_idx.append(i)
+        if isinstance(content, str) and content.strip():
+            user_text_idx.append(i)
         elif isinstance(content, list) and any(
             isinstance(b, dict) and b.get("type") == "text" for b in content
         ):
@@ -107,9 +100,9 @@ def collect_assistants(transcript_path):
             continue
         msg = e.get("message", {}) or {}
         msg_id = msg.get("id") or ""
-        if msg_id and msg_id in seen_msg_ids:
-            continue
         if msg_id:
+            if msg_id in seen_msg_ids:
+                continue
             seen_msg_ids.add(msg_id)
         usage = msg.get("usage", {}) or {}
         rec = {
@@ -232,15 +225,12 @@ def turn_window(group_first_ts, user_text_idx, transcript_entries):
     return turn_start_idx, next_user_idx
 
 
-def process_group(group, transcript_path, now):
+def process_group(group, entries, assistants, user_text_idx, now):
     """Build a log entry (root + optional sub_skills) for one turn group."""
-    entries_cache = read_jsonl(transcript_path) if transcript_path else []
-    assistants, user_text_idx = collect_assistants(transcript_path)
-
     boundaries = [parse_ts(p.get("ts", "")) for p in group]
     group_first_ts = boundaries[0]
     turn_start_idx, next_user_idx = turn_window(
-        group_first_ts, user_text_idx, entries_cache
+        group_first_ts, user_text_idx, entries
     )
     turn_assistants = assistants_in_window(assistants, turn_start_idx, next_user_idx)
 
@@ -334,10 +324,12 @@ def main():
         now = datetime.now(timezone.utc)
         groups = group_pending(pending)
         transcript_path = pending[0].get("transcript", "")
+        entries = read_jsonl(transcript_path) if transcript_path else []
+        assistants, user_text_idx = collect_assistants(entries)
 
         with open(log_path, "a") as out:
             for grp in groups:
-                entry = process_group(grp, transcript_path, now)
+                entry = process_group(grp, entries, assistants, user_text_idx, now)
                 out.write(json.dumps(entry) + "\n")
     finally:
         try:
