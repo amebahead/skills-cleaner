@@ -29,19 +29,44 @@ Examples:
 
 ## Output Rules
 
-**ALWAYS paste the script's terminal output verbatim as a fenced code block.** Do not summarize, rephrase, or reformat the table into prose. The script already produces a well-formatted table — show it exactly as printed. No additional commentary is needed before or after the table unless the user asks a follow-up question.
+How the report's table reaches the user depends on their Claude Code `verbose` setting (in `~/.claude/settings.json`). Long Bash tool results are collapsed to "+N lines (ctrl+o to expand)" unless `verbose: true`, so the execution path differs:
 
-When `--detail` is used, the script opens a browser automatically. Print the URL from script output and tell the user to press Ctrl+C when done.
+1. **Read `~/.claude/settings.json`** (or `~/.claude/settings.local.json` if it overrides) once before deciding.
+
+2. **If `verbose === true`** — run the script directly:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/skills/profile-skills/scripts/report.py" [OPTIONS]
+   ```
+
+   The Bash result panel shows the full table. Stay silent — do not re-paste, summarize, or reformat.
+
+3. **If `verbose !== true`** (false or absent) — pass `--out` so the script writes the report itself (no shell redirect, so `Bash(python3:*)` matches cleanly and the Bash panel stays empty):
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/skills/profile-skills/scripts/report.py" [OPTIONS] --out ~/.claude/.cache/skills-cleaner-profile.txt
+   ```
+
+   Then Read `~/.claude/.cache/skills-cleaner-profile.txt` and paste its contents **verbatim as a fenced code block**. This becomes the user's only visible output. Don't rephrase or reformat.
+
+   The script creates the parent dir if missing. stderr is untouched, so any error stays visible in the Bash panel for debugging.
+
+The `--detail` flag is an exception: the script opens a browser and keeps a server alive, so do **not** pass `--out`. Run it directly regardless of `verbose`, then confirm the URL and that `Ctrl+C` stops it — no need to paste anything.
+
+Never add commentary before or after unless the user follows up.
 
 ## Token / Model / Duration Tracking
 
-The `Stop` hook captures per-turn metrics after each skill invocation:
+The `Stop` hook records one entry per turn after collecting all skill invocations that fired in that turn. The first invocation in a turn is the **root** skill; any further skill calls that happened during the same turn are recorded as **sub-skills** nested under the root.
 
-- `output_tokens` — summed from assistant entries in the transcript tail
-- `model` — the Claude model ID used during the turn (from the transcript's assistant message)
-- `duration_ms` — elapsed milliseconds between the skill invocation (PostToolUse / UserPromptSubmit) and the `Stop` hook firing
+For each skill (root or sub) the hook captures its **own segment**:
 
-All three fields are recorded for both Claude-initiated (`source: "claude"`) and user-initiated (`source: "user"`) calls. The report aggregates average duration per call and the primary model used per skill.
+- `output_tokens` — assistant output tokens whose timestamps fall between this skill's invocation and the next skill's invocation (or the turn's end). Non-overlapping, so summing across rows in a report gives the true total.
+- `input_tokens` / `cache_read_input_tokens` / `cache_creation_input_tokens` — input-side counters from the same `usage` block, summed per segment with the same boundaries. Cache-read and cache-write are kept separate because their effective pricing differs (read ~0.1×, write ~1.25×).
+- `model` — first model seen in the segment (typically the Claude model ID for the turn).
+- `duration_ms` — elapsed time from this skill's invocation to the next boundary (next sub-skill invocation, or `Stop` firing for the last segment).
+
+The report displays a parent's total inclusive of its sub-skills (e.g. `7.0K (brainstorming: 1.2K, writing-plans: 500)`) — the parenthesised breakdown is computed from the `sub_skills` array.
 
 ## If No Data Found
 
@@ -54,13 +79,16 @@ Both hooks are bundled with this plugin and registered automatically via `plugin
 
 ## Log Format
 
-Each line in `skill-usage.jsonl` is a JSON object:
+Each line in `skill-usage.jsonl` is one JSON object per turn. A turn with only one skill invocation produces a flat entry; a turn with sub-skills nests them under `sub_skills`.
 
 ```jsonl
-{"skill":"brainstorming","ts":"2026-04-10T02:19:18Z","session":"abc123","source":"claude","model":"claude-opus-4-7-20251022","duration_ms":12400,"output_tokens":2566}
-{"skill":"list-skills","ts":"2026-04-10T03:00:00Z","session":"def456","source":"user","model":"claude-sonnet-4-6-20250929","duration_ms":2100,"output_tokens":1234}
+{"skill":"list-skills","ts":"2026-04-10T03:00:00Z","session":"def456","source":"user","model":"claude-sonnet-4-6","duration_ms":2100,"input_tokens":4,"cache_creation_input_tokens":0,"cache_read_input_tokens":21000,"output_tokens":1234}
+{"skill":"skill-creator:skill-creator","ts":"2026-04-27T10:00:00Z","session":"abc","source":"user","model":"claude-opus-4-7","duration_ms":12000,"input_tokens":12,"cache_creation_input_tokens":26000,"cache_read_input_tokens":16700,"output_tokens":4000,"sub_skills":[{"skill":"superpowers:brainstorming","ts":"2026-04-27T10:01:00Z","source":"claude","model":"claude-opus-4-7","duration_ms":10000,"input_tokens":3,"cache_creation_input_tokens":500,"cache_read_input_tokens":40000,"output_tokens":800}]}
 ```
 
 - `source: "claude"` — Claude invoked the skill via the Skill tool
 - `source: "user"` — User typed `/skill-name` directly
-- `model`, `duration_ms`, `output_tokens` — captured by the `Stop` hook from the transcript tail and pending-entry timestamp
+- All token / duration fields are own-segment values, not inclusive of sub-skills (sum the row + `sub_skills[*]` to get the turn total).
+- `sub_skills` — present only when more than one skill fired in the turn; ordered by invocation time.
+
+Older log lines without `sub_skills` or input-side fields are still readable; the report treats missing token fields as zero (rendered as `-`).

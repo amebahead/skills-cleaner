@@ -6,12 +6,14 @@ Scans:
   ~/.claude/plugins/cache/  (plugin skills)
 
 Deduplicates by name+plugin, keeping the latest version path.
-Outputs JSON array to stdout.
+Default output is a grouped text table; `--format json` emits the raw array.
 """
 
+import argparse
 import json
 import os
 import re
+from collections import defaultdict
 from pathlib import Path
 
 SKILLS_DIR = Path.home() / ".claude" / "skills"
@@ -91,5 +93,63 @@ def collect() -> list:
     return sorted(entries.values(), key=lambda e: (e["plugin"], e["name"]))
 
 
+def _truncate(s, n=60):
+    return s if len(s) <= n else s[: n - 3] + "..."
+
+
+def format_text(entries):
+    """Render collected entries as a grouped text table:
+      - personal first, then plugin groups alphabetically
+      - skills sorted alphabetically within each group
+      - two columns (name, truncated description)
+    """
+    groups = defaultdict(list)
+    for e in entries:
+        groups[e.get("plugin") or "personal"].append(e)
+
+    plugin_names = sorted(groups.keys(), key=lambda p: (p != "personal", p))
+    name_width = max((len(e["name"]) for e in entries), default=0)
+    name_width = max(name_width, 4)
+
+    lines = [f"Installed Skills ({len(entries)} total)", ""]
+    for plugin in plugin_names:
+        items = sorted(groups[plugin], key=lambda e: e["name"])
+        lines.append(f"{plugin} ({len(items)} skills)")
+        for e in items:
+            desc = _truncate(e.get("description", "") or "")
+            lines.append(f"  {e['name']:<{name_width}}  {desc}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def main():
+    parser = argparse.ArgumentParser(description="List installed skills.")
+    parser.add_argument(
+        "--format", "-f",
+        choices=["text", "json"],
+        default="text",
+        help="Output format (default: text)",
+    )
+    parser.add_argument(
+        "--out", "-o",
+        help="Write output to this path instead of stdout (creates parent dirs).",
+    )
+    args = parser.parse_args()
+
+    entries = collect()
+    payload = (
+        json.dumps(entries, indent=2, ensure_ascii=False) + "\n"
+        if args.format == "json"
+        else format_text(entries)
+    )
+
+    if args.out:
+        out_path = Path(os.path.expanduser(args.out))
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(payload, encoding="utf-8")
+    else:
+        print(payload, end="")
+
+
 if __name__ == "__main__":
-    print(json.dumps(collect(), indent=2, ensure_ascii=False))
+    main()

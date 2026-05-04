@@ -14,43 +14,38 @@ Show all installed skills with their source plugin and path.
 
 ## Process
 
-### Step 1: Collect via Script
+### Step 1: Run the collection script
 
-Run the bundled collection script — it scans both paths and outputs JSON in one pass:
+The bundled script scans personal skills (`~/.claude/skills/**/SKILL.md`) and plugin skills (`~/.claude/plugins/cache/**/SKILL.md`), extracts the frontmatter, deduplicates across versions, and prints a grouped, aligned table by default. Use the absolute path from this skill's directory when invoking it:
 
 ```bash
-python3 "$(dirname "$SKILL_PATH")/scripts/collect_skills.py"
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/list-skills/scripts/collect_skills.py"
 ```
 
-If `$SKILL_PATH` is not available, use the script's absolute path from this skill's directory.
+The default text output is already in the right shape (personal first, then plugin groups alphabetically; skills alphabetised within each group; descriptions truncated at 60 chars). Pass `--format json` only if you need the raw array for further processing.
 
-The script scans:
-1. `~/.claude/skills/**/SKILL.md` — personal skills
-2. `~/.claude/plugins/cache/**/SKILL.md` — plugin skills
+### Step 2: Display based on `verbose`
 
-It extracts name and description from frontmatter, deduplicates across versions, and returns a sorted JSON array.
+How the table reaches the user depends on their `verbose` setting (in `~/.claude/settings.json`). Long Bash tool results are collapsed to "+N lines (ctrl+o to expand)" unless `verbose: true`, so the execution path differs:
 
-### Step 2: Format the Output
+1. **Read `~/.claude/settings.json`** (or `~/.claude/settings.local.json` if it overrides) once before deciding.
 
-Parse the JSON and display using this exact format:
+2. **If `verbose === true`** — run the script directly:
 
-```
-Installed Skills (N total)
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/skills/list-skills/scripts/collect_skills.py"
+   ```
 
-personal (M skills)
-  my-custom-skill       Custom automation tool
-  my-helper             Helper for daily tasks
+   The Bash result panel shows the full table. Stay silent — do not re-paste, summarize, or reformat.
 
-superpowers (14 skills)
-  brainstorming         Explore intent and requirements before implementation
-  writing-plans         Create implementation plans from specs
-  ...
-```
+3. **If `verbose !== true`** (false or absent) — pass `--out` so the script writes the table itself (no shell redirect, so `Bash(python3:*)` matches cleanly and the Bash panel stays empty):
 
-### Display Rules
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/skills/list-skills/scripts/collect_skills.py" --out ~/.claude/.cache/skills-cleaner-list.txt
+   ```
 
-- Group by plugin name, personal skills first, then plugin groups alphabetically
-- Sort skills alphabetically within each group
-- Show skill name and description in two columns, aligned
-- Truncate description at 60 characters with `...` if needed
-- Show total count in the header and per-group count
+   Then Read `~/.claude/.cache/skills-cleaner-list.txt` and paste its contents **verbatim as a fenced code block**. This becomes the user's only visible output. Don't rephrase or reformat.
+
+   The script creates the parent dir if missing. stderr is untouched, so any error stays visible in the Bash panel for debugging.
+
+Never add commentary before or after unless the user follows up.
