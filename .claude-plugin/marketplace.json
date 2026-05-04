@@ -10,7 +10,7 @@
     {
       "name": "skills-cleaner",
       "description": "Track and analyze skill usage by AI agents, and clean up redundant or overlapping skills.",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "source": "./",
       "author": {
         "name": "amebahead",
