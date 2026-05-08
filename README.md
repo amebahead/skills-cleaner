@@ -21,7 +21,7 @@ Or within Claude Code:
 | Command | Description |
 |---------|-------------|
 | `/profile-skills` | Track skill usage stats, token consumption, and visual HTML report |
-| `/list-skills` | List all installed skills grouped by plugin |
+| `/list-skills` | List installed skills grouped by project / personal / plugin |
 | `/search-skills` | Search for a skill by name and show its path |
 | `/clean-skills` | Compare skills for similarity and clean up duplicates |
 
@@ -63,20 +63,38 @@ Options:
 
 ### /list-skills
 
-Shows all installed skills grouped by source (personal or plugin name).
+Shows installed skills grouped by source. Three scopes are scanned:
+
+- **project** — `<cwd>/.claude/skills/**` (walks up from the current working
+  directory to find the nearest one); shown first when present.
+- **personal** — `~/.claude/skills/**`.
+- **plugin** — `~/.claude/plugins/cache/**`, grouped by plugin name.
+
+Descriptions are condensed to a keyword-style summary (pushy `Use when …` /
+`This skill should be used when …` framings are stripped, capped at ~50
+chars). Skill names are highlighted — ANSI bold cyan in the terminal, inline
+code in the chat panel — so they stand out at a glance.
 
 ```
-Installed Skills (16 total)
+Installed Skills (17 total)
+  project: /Users/me/work/my-app
+
+project (1 skill)
+  test-skill         A test project-local skill
 
 personal (2 skills)
-  my-custom-skill       Custom automation tool
-  my-helper             Helper for daily tasks
+  my-custom-skill    Custom automation tool
+  my-helper          Helper for daily tasks
 
 superpowers (10 skills)
-  brainstorming         Explore intent and requirements before implementation
-  writing-plans         Create implementation plans from specs
+  brainstorming      Explores user intent before implementation
+  writing-plans      Create implementation plans from specs
   ...
 ```
+
+Useful flags: `--no-project` (skip the project scan), `--project-dir <path>`
+(point the project scan elsewhere), `--format {text,markdown,json}`,
+`--color {always,auto,never}`.
 
 ### /search-skills
 
